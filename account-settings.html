@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account Settings · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="account-settings">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Account Settings</h1>
+      <p>Manage your account, password, and workspaces. These are account-level settings — conference settings live inside the Conference Admin workspace.</p>
+    </div>
+
+    <div class="card" id="profile">
+      <div class="card-title">Profile Information</div>
+      <form id="profile-form" class="form-grid">
+        <div class="field"><label>First name</label><input type="text" name="firstName"></div>
+        <div class="field"><label>Last name</label><input type="text" name="lastName"></div>
+        <div class="field"><label>Email</label><input type="email" name="email" readonly><div class="hint">Email cannot be changed in this prototype.</div></div>
+        <div class="field"><label>Mobile</label><input type="tel" name="mobile"></div>
+        <div class="field"><label>Country / Region</label><input type="text" name="country"></div>
+        <div class="field"><label>Affiliation</label><input type="text" name="affiliation"></div>
+        <div class="field full" style="display:flex;flex-direction:column;align-items:flex-end;margin-top:4px"><button type="submit" class="btn btn-primary">Save Profile</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Change Password</div>
+      <form id="pw-form" class="form-grid">
+        <div class="field full"><label>Current password</label><input type="password" name="current" autocomplete="current-password"><div class="field-error">Current password is incorrect.</div></div>
+        <div class="field"><label>New password</label><input type="password" name="next" autocomplete="new-password"><div class="field-error">Required.</div></div>
+        <div class="field"><label>Confirm new password</label><input type="password" name="confirm" autocomplete="new-password"><div class="field-error">Passwords do not match.</div></div>
+        <div class="field full" style="display:flex;flex-direction:column;align-items:flex-end;margin-top:4px"><button type="submit" class="btn btn-primary">Update Password</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Email &amp; Verification Status</div>
+      <dl class="kv">
+        <dt>Email</dt><dd id="vs-email">—</dd>
+        <dt>Status</dt><dd><span class="badge accepted">✓ Verified</span></dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Workspace / Role Management</div>
+      <div id="ws-mgmt"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Session Information</div>
+      <dl class="kv" id="session-info"></dl>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Sign out</div>
+      <p class="muted small" style="margin:-6px 0 14px">End your current session and return to the login screen.</p>
+      <div style="display:flex;justify-content:flex-end"><button class="btn btn-danger" id="logout-btn">Log out</button></div>
+    </div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var c = document.querySelector(".content");
+    var auth = CMS.auth.load();
+    function getAcc(){ return auth.session ? auth.accounts.find(function(a){ return a.email.toLowerCase() === auth.session.email.toLowerCase(); }) : null; }
+    var acc = getAcc();
+
+    if (!acc) {
+      c.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>Not signed in</h3><a class="btn btn-primary" href="index.html">Go to login</a></div>';
+      return;
+    }
+
+    // ----- Profile -----
+    var pf = c.querySelector("#profile-form");
+    ["firstName","lastName","email","mobile","country","affiliation"].forEach(function (k){ if (pf[k]!=null) pf[k].value = acc[k] || ""; });
+    pf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      acc.firstName = pf.firstName.value.trim() || acc.firstName;
+      acc.lastName = pf.lastName.value.trim() || acc.lastName;
+      acc.mobile = pf.mobile.value.trim();
+      acc.country = pf.country.value.trim();
+      acc.affiliation = pf.affiliation.value.trim();
+      if (auth.session) auth.session.name = acc.firstName + " " + acc.lastName;
+      CMS.auth.save(auth);
+      CMS.toast("Profile saved", "Your details were updated.");
+      setTimeout(function(){ location.reload(); }, 700);
+    });
+
+    // ----- Change password -----
+    var pw = c.querySelector("#pw-form");
+    function pwErr(n,on){ pw.querySelector('[name="'+n+'"]').closest(".field").classList.toggle("invalid", on); }
+    pw.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var cur = pw.current.value, nx = pw.next.value, cf = pw.confirm.value, ok = true;
+      if (cur !== acc.password) { pwErr("current", true); ok = false; } else pwErr("current", false);
+      if (!nx) { pwErr("next", true); ok = false; } else pwErr("next", false);
+      if (!nx || nx !== cf) { pwErr("confirm", true); ok = false; } else pwErr("confirm", false);
+      if (!ok) { CMS.toast("Check the form", "Please fix the highlighted fields.", "err"); return; }
+      acc.password = nx;
+      CMS.auth.save(auth);
+      pw.reset();
+      CMS.toast("Password updated", "Your password was changed.");
+    });
+
+    // ----- Email & verification -----
+    c.querySelector("#vs-email").textContent = acc.email;
+
+    // ----- Workspace / Role management -----
+    var roles = CMS.auth.roles();
+    var cur = CMS.getWorkspace();
+    var WS = CMS.WORKSPACES;
+    var box = c.querySelector("#ws-mgmt");
+    if (!roles.length) {
+      box.innerHTML = '<div class="empty" style="padding:30px"><div class="ico">◷</div><h3>No workspaces yet</h3><p>Create a conference to gain the Conference Admin workspace, or submit a paper to gain the Author workspace.</p></div>';
+    } else {
+      box.innerHTML =
+        '<p class="small" style="margin-top:-4px">Current active workspace: <strong>' + CMS.esc(WS[cur] ? WS[cur].label : "—") + '</strong></p>' +
+        roles.map(function (r) {
+          var isCur = (r === cur);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px">' +
+            '<div><div style="font-weight:650">'+CMS.esc(WS[r] ? WS[r].label : r)+'</div><div class="muted small">Acquired workspace</div></div>' +
+            (isCur ? '<span class="badge accepted">Active</span>' : '<button class="btn btn-ghost btn-sm ws-switch" data-ws="'+r+'">Switch</button>') +
+          '</div>';
+        }).join("");
+      box.querySelectorAll(".ws-switch").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var w = btn.getAttribute("data-ws");
+          CMS.setWorkspace(w);
+          if (w === "admin") { var cf2 = CMS.getConf(); location.href = "conference-overview.html" + (cf2 ? "?conf=" + cf2 : ""); }
+          else location.href = WS[w] ? WS[w].home : "onboarding.html";
+        });
+      });
+    }
+
+    // ----- Session info -----
+    var s = auth.session || {};
+    c.querySelector("#session-info").innerHTML =
+      '<dt>Signed in as</dt><dd>'+CMS.esc(acc.firstName+" "+acc.lastName)+'</dd>' +
+      '<dt>Email</dt><dd>'+CMS.esc(acc.email)+'</dd>' +
+      '<dt>Remember me</dt><dd>'+(s.remember ? "Yes" : "No")+'</dd>' +
+      '<dt>Account ID</dt><dd>'+CMS.esc(acc.id)+'</dd>';
+
+    // ----- Logout -----
+    c.querySelector("#logout-btn").addEventListener("click", function () {
+      CMS.auth.logout(); location.href = "index.html";
+    });
+  })();
+  </script>
+</body>
+</html>

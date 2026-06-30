@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Paper · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="review-paper">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Review Paper</h1>
+      <p id="rev-sub">Papers assigned to you for review. Open a paper to record your score, comments and recommendation.</p>
+    </div>
+
+    <div class="grid grid-3" id="stats"></div>
+    <div class="card">
+      <div class="card-title">My assigned papers</div>
+      <div id="assigned"></div>
+    </div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    // Logged-in reviewer (matched to the account email).
+    var me = CMS.currentReviewer(db);
+    var cu = CMS.auth.current();
+
+    if (!me) {
+      c.querySelector("#rev-sub").innerHTML = 'You don’t have a reviewer profile yet.';
+      c.querySelector("#stats").innerHTML = "";
+      c.querySelector("#assigned").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>Not set up as a reviewer</h3><p>You become a reviewer by accepting a reviewer invitation. Once a Track Lead assigns you papers, they appear here.</p></div>';
+      return;
+    }
+
+    c.querySelector("#rev-sub").innerHTML = 'Signed in as <strong>'+CMS.esc(me.firstName+" "+me.lastName)+'</strong>. Open a paper to record your score, comments and recommendation.';
+    var mine = db.assignments.filter(function (a){ return a.reviewerId === me.id; });
+    var myReviews = db.reviews.filter(function (r){ return r.reviewerId === me.id; });
+
+    var pending = mine.filter(function(a){ return !myReviews.some(function(r){ return r.paperId===a.paperId; }); }).length;
+    c.querySelector("#stats").innerHTML =
+      '<div class="stat"><div class="n">'+mine.length+'</div><div class="l">Assigned to me</div></div>' +
+      '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending review</div></div>' +
+      '<div class="stat"><div class="n">'+myReviews.length+'</div><div class="l">Reviews submitted</div></div>';
+
+    if (!mine.length) {
+      c.querySelector("#assigned").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>No papers assigned</h3><p>Track Leads assign papers to reviewers from the Review Assignment screen.</p></div>';
+      return;
+    }
+    c.querySelector("#assigned").innerHTML = '<div class="table-wrap"><table><thead><tr><th>Paper</th><th>Track</th><th>Current stage</th><th>My review</th><th class="text-right">Action</th></tr></thead><tbody>' +
+      mine.map(function (a) {
+        var p = db.papers.find(function(x){return x.id===a.paperId;}) || {};
+        var t = db.tracks.find(function(x){return x.id===a.trackId;}) || {};
+        var myRev = myReviews.find(function(r){ return r.paperId===a.paperId; });
+        var stage = p.id ? (function(){ var wf = CMS.workflow(p, db); return wf.completed
+            ? '<span class="muted small">'+(wf.status==="rejected"?"Rejected":"Completed")+'</span>'
+            : '<div style="font-weight:600">'+CMS.esc(wf.pendingLabel)+'</div><div class="muted small">Pending on '+CMS.esc(wf.pendingOn)+'</div>'; })() : '—';
+        var coi = CMS.isOwnPaper(p);
+        var myCol = coi ? '<span class="muted small">—</span>' : (myRev
+          ? '<span class="score-pill">'+myRev.score+'/10</span> <span class="muted small">'+CMS.esc(myRev.recommendation)+'</span>'
+          : '<span class="badge pending">Not reviewed</span>');
+        var action = coi
+          ? '<span class="badge rejected">Conflict of interest</span>'
+          : (myRev
+            ? '<a class="btn btn-ghost btn-sm" href="review-submit.html?paper='+a.paperId+'">Edit review</a>'
+            : '<a class="btn btn-primary btn-sm" href="review-submit.html?paper='+a.paperId+'">Review</a>');
+        return '<tr><td><div style="font-weight:600">'+CMS.esc(p.title||a.paperId)+'</div><div class="muted small">'+CMS.esc(a.paperId)+'</div></td>' +
+          '<td>'+CMS.esc(t.name||"—")+'</td><td>'+stage+'</td><td>'+myCol+'</td>' +
+          '<td class="text-right">'+action+'</td></tr>';
+      }).join("") + '</tbody></table></div>';
+  })();
+  </script>
+</body>
+</html>

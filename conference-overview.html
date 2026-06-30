@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Overview · ConfManage</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/theme.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body data-page="conference-overview">
+    <template id="page-content">
+      <div class="page-head">
+        <h1 id="ov-title">Overview</h1>
+        <p id="ov-sub">Conference workspace summary.</p>
+      </div>
+      <div id="ov-body"></div>
+    </template>
+
+    <script src="assets/app.js"></script>
+    <script>
+      (function () {
+        var db = CMS.load();
+        var c = document.querySelector(".content");
+        var confId = CMS.param("conf") || CMS.getConf();
+        var conf = db.conferences.find(function (x) {
+          return x.id === confId;
+        });
+
+        if (!conf) {
+          c.querySelector("#ov-body").innerHTML =
+            '<div class="empty"><div class="ico">▤</div><h3>No conference selected</h3><p>Create a conference to open its workspace.</p><a class="btn btn-primary" href="create-conference.html">Create Conference</a></div>';
+          return;
+        }
+
+        var tracks = db.tracks.filter(function (t) {
+          return t.conferenceId === conf.id;
+        });
+        var papers = db.papers.filter(function (p) {
+          return p.conferenceId === conf.id;
+        });
+        var q = "?conf=" + conf.id;
+
+        c.querySelector("#ov-title").textContent = conf.name;
+        c.querySelector("#ov-sub").innerHTML =
+          CMS.esc(conf.acronym) +
+          " · " +
+          CMS.esc(conf.id) +
+          " &nbsp;" +
+          CMS.statusBadge(conf.status);
+
+        // ----- Pending activities (what the admin still needs to do) -----
+        var acts = [];
+        if (tracks.length === 0) {
+          acts.push({
+            ic: "▦",
+            title: "Configure tracks",
+            sub: "Add at least one track to this conference",
+            href: "configure-tracks.html" + q,
+          });
+        } else {
+          var noLead = tracks.filter(function (t) {
+            return !t.trackLeadId;
+          });
+          if (noLead.length)
+            acts.push({
+              ic: "✎",
+              title: "Assign track leads",
+              sub: noLead.length + " track(s) still need a track lead",
+              href: "configure-tracks.html" + q,
+            });
+        }
+        if (conf.status !== "cfp") {
+          acts.push({
+            ic: "▤",
+            title: "Publish the Call for Papers",
+            sub: "Open the conference for paper submissions",
+            href: "publish-cfp.html" + q,
+          });
+        }
+        var pendingHtml;
+        if (acts.length) {
+          pendingHtml =
+            '<div class="card">' +
+            '<div class="card-title">Pending activities (' +
+            acts.length +
+            ")</div>" +
+            '<p class="card-sub">Things you still need to do. Click an activity to complete it.</p>' +
+            acts
+              .map(function (a) {
+                return (
+                  '<a class="act-item" href="' +
+                  a.href +
+                  '">' +
+                  '<span class="act-ic">' +
+                  a.ic +
+                  "</span>" +
+                  '<span class="act-body"><span class="act-title">' +
+                  CMS.esc(a.title) +
+                  '</span><span class="act-sub">' +
+                  CMS.esc(a.sub) +
+                  "</span></span>" +
+                  '<span class="act-go">›</span></a>'
+                );
+              })
+              .join("") +
+            "</div>";
+        } else {
+          pendingHtml =
+            '<div class="notice"><span>✓</span><div><strong>All set up.</strong> Tracks, track leads and the Call for Papers are ready — the conference is open for submissions.</div></div>';
+        }
+
+        c.querySelector("#ov-body").innerHTML =
+          pendingHtml +
+          '<div class="grid grid-3" style="margin-bottom: 20px">' +
+          '<a class="stat" href="configure-tracks.html' +
+          q +
+          '"><div class="n">' +
+          tracks.length +
+          '</div><div class="l">Tracks ›</div></a>' +
+          '<a class="stat" href="papers.html' +
+          q +
+          '"><div class="n">' +
+          papers.length +
+          '</div><div class="l">Papers ›</div></a>' +
+          '<div class="stat"><div style="margin:6px 0 4px">' +
+          CMS.statusBadge(conf.status) +
+          '</div><div class="l">Status</div></div>' +
+          "</div>" +
+          '<div class="card"><div class="card-title">Conference details</div>' +
+          '<dl class="kv">' +
+          "<dt>Venue</dt><dd>" +
+          CMS.esc(conf.venue || "—") +
+          ", " +
+          CMS.esc(conf.city || "") +
+          " " +
+          CMS.esc(conf.country || "") +
+          "</dd>" +
+          "<dt>Dates</dt><dd>" +
+          CMS.fmtDate(conf.startDate) +
+          " – " +
+          CMS.fmtDate(conf.endDate) +
+          "</dd>" +
+          "<dt>Abstract deadline</dt><dd>" +
+          CMS.fmtDate(conf.abstractDeadline) +
+          "</dd>" +
+          "<dt>Submission deadline</dt><dd>" +
+          CMS.fmtDate(conf.submissionDeadline) +
+          "</dd>" +
+          (conf.webPage
+            ? '<dt>Web page</dt><dd><a href="' +
+              CMS.esc(conf.webPage) +
+              '" target="_blank" rel="noopener">' +
+              CMS.esc(conf.webPage) +
+              "</a></dd>"
+            : "") +
+          "</dl>" +
+          "</div>" +
+          '<div class="card"><div class="card-title">Quick actions</div>' +
+          '<div class="form-actions" style="margin-top:0">' +
+          '<a class="btn btn-subtle btn-sm" href="configure-tracks.html' +
+          q +
+          '">Configure Tracks</a>' +
+          '<a class="btn btn-subtle btn-sm" href="publish-cfp.html' +
+          q +
+          '">Call For Papers</a>' +
+          '<a class="btn btn-subtle btn-sm" href="papers.html' +
+          q +
+          '">Papers &amp; Pipeline</a>' +
+          '<a class="btn btn-ghost btn-sm" href="create-conference.html' +
+          q +
+          '&edit=1">Edit Conference</a>' +
+          "</div>" +
+          "</div>";
+      })();
+    </script>
+  </body>
+</html>

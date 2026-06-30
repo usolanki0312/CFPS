@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Analysis · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="review-analysis">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Review Analysis</h1>
+      <p>Aggregated view of submitted reviews per paper. Use this to inform the acceptance decision.</p>
+    </div>
+    <div id="list"></div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var lead = CMS.currentLead(db);
+    var myTrackIds = CMS.currentLeadTrackIds(db);
+
+    if (!lead) {
+      c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">◎</div><h3>Not set up as a Track Lead</h3><p>Accept a Track Lead invitation to see review analysis for your tracks.</p></div>';
+      return;
+    }
+
+    // Papers in this lead's tracks that have at least one submitted review.
+    var reviewed = db.papers.filter(function (p){
+      return myTrackIds.indexOf(p.trackId) >= 0 && db.reviews.some(function(r){ return r.paperId===p.id; });
+    });
+
+    if (!reviewed.length) {
+      c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">◎</div><h3>No reviews to analyse yet</h3><p>Analysis appears once reviewers submit reviews for papers in your tracks.</p></div>';
+      return;
+    }
+
+    c.querySelector("#list").innerHTML = reviewed.map(function (p) {
+      var t = db.tracks.find(function(x){return x.id===p.trackId;}) || {};
+      var revs = db.reviews.filter(function(r){ return r.paperId===p.id; });
+      var assigned = db.assignments.filter(function(a){ return a.paperId===p.id; }).length;
+      var avg = (revs.reduce(function(s,r){ return s+Number(r.score||0); },0)/revs.length).toFixed(1);
+      var done = revs.length, complete = (assigned ? done >= assigned : true);
+
+      var rows = revs.map(function (r) {
+        var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
+        return '<tr><td>'+CMS.esc((rev.firstName||"Reviewer")+" "+(rev.lastName||""))+'</td>' +
+          '<td><span class="score-pill">'+r.score+'/10</span></td>' +
+          '<td>'+CMS.esc(r.recommendation)+'</td>' +
+          '<td class="muted small">'+CMS.esc(r.comments)+'</td></tr>';
+      }).join("");
+
+      return '<div class="card">' +
+        '<div class="head-row"><div><div style="font-size:15px;font-weight:650">'+CMS.esc(p.title)+'</div><div class="muted small" style="margin-top:3px">'+CMS.esc(p.id)+' · Track: '+CMS.esc(t.name||"—")+' · Author: '+CMS.esc(p.authorFirst+" "+p.authorLast)+'</div></div>' +
+          '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--primary-d)">'+avg+'</div><div class="muted small">avg score</div></div></div>' +
+        '<div class="small" style="margin:10px 0">'+done+' of '+(assigned||done)+' reviews received '+(complete?CMS.statusBadge("completed"):CMS.statusBadge("pending"))+'</div>' +
+        '<div class="table-wrap" style="box-shadow:none"><table><thead><tr><th>Reviewer</th><th>Score</th><th>Recommendation</th><th>Comments</th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+        '<div class="t-actions" style="margin-top:14px"><a class="btn btn-subtle btn-sm" href="acceptance-decision.html?paper='+p.id+'">Make decision →</a></div>' +
+      '</div>';
+    }).join("");
+  })();
+  </script>
+</body>
+</html>

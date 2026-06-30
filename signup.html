@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create account · ConfManage</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/theme.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+  <body>
+    <div class="auth-wrap">
+      <form class="auth-card wide" id="signup-form" novalidate>
+        <div class="auth-brand"><span class="logo">CM</span> ConfManage</div>
+        <h1 class="auth-title">Create your account</h1>
+        <p class="auth-sub">
+          Set up an account to use the conference management system.
+        </p>
+
+        <div class="form-grid">
+          <div class="field">
+            <label>First name <span class="req">*</span></label
+            ><input type="text" name="firstName" />
+            <div class="field-error">Required.</div>
+          </div>
+          <div class="field">
+            <label>Last name <span class="req">*</span></label
+            ><input type="text" name="lastName" />
+            <div class="field-error">Required.</div>
+          </div>
+
+          <div class="field full">
+            <label>Email <span class="req">*</span></label>
+            <div class="otp-row">
+              <input type="email" name="email" placeholder="you@example.com" />
+              <button type="button" class="btn btn-ghost" id="send-code">
+                Send code
+              </button>
+            </div>
+            <div class="field-error">Enter a valid email address.</div>
+          </div>
+
+          <div class="field full" id="otp-field" style="display: none">
+            <label>Email verification code <span class="req">*</span></label>
+            <div class="otp-row">
+              <input
+                type="text"
+                name="otp"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="6-digit code"
+              />
+              <button type="button" class="btn btn-ghost" id="verify-code">
+                Verify
+              </button>
+              <span class="otp-ok" id="otp-ok" style="display: none"
+                >✓ Verified</span
+              >
+            </div>
+            <div class="hint">
+              Enter any 6-digit code to verify (prototype — no real email is
+              sent).
+            </div>
+          </div>
+
+          <div class="field">
+            <label
+              >Mobile
+              <span class="hint" style="font-weight: 400"
+                >(optional)</span
+              ></label
+            ><input type="tel" name="mobile" />
+          </div>
+          <div class="field">
+            <label>Country / Region <span class="req">*</span></label
+            ><select name="country"></select>
+            <div class="field-error">Required.</div>
+          </div>
+          <div class="field full">
+            <label>Affiliation <span class="req">*</span></label
+            ><input
+              type="text"
+              name="affiliation"
+              placeholder="Institution / organization"
+            />
+            <div class="field-error">Required.</div>
+          </div>
+
+          <div class="field">
+            <label>Create password <span class="req">*</span></label>
+            <div class="pw-wrap">
+              <input
+                type="password"
+                name="password"
+                autocomplete="new-password"
+              /><button type="button" class="pw-toggle">Show</button>
+            </div>
+            <div class="field-error">Password is required.</div>
+          </div>
+          <div class="field">
+            <label>Confirm password <span class="req">*</span></label>
+            <div class="pw-wrap">
+              <input
+                type="password"
+                name="confirm"
+                autocomplete="new-password"
+              /><button type="button" class="pw-toggle">Show</button>
+            </div>
+            <div class="field-error">Passwords do not match.</div>
+          </div>
+        </div>
+
+        <div class="req-list" id="reqs" style="margin-top: 18px">
+          <div class="req-item" data-k="verify">
+            <span class="req-ico">○</span> Verify your email
+          </div>
+          <div class="req-item" data-k="match">
+            <span class="req-ico">○</span> Create &amp; confirm password match
+          </div>
+        </div>
+
+        <div class="form-actions" style="margin-top: 6px">
+          <button
+            type="submit"
+            class="btn btn-primary"
+            id="create-btn"
+            style="width: 100%; justify-content: center"
+            disabled
+          >
+            Create account
+          </button>
+        </div>
+
+        <div class="auth-divider"></div>
+        <div class="auth-foot">
+          Already have an account? <a href="index.html">Login</a>
+        </div>
+      </form>
+    </div>
+    <div class="toast-wrap" id="toast-wrap"></div>
+
+    <script src="assets/app.js"></script>
+    <script>
+      (function () {
+        CMS.auth.load();
+        var form = document.getElementById("signup-form");
+        var verified = false;
+
+        function field(name) {
+          return form.querySelector('[name="' + name + '"]');
+        }
+        function setErr(name, on) {
+          field(name).closest(".field").classList.toggle("invalid", on);
+        }
+        function emailOk() {
+          return /^\S+@\S+\.\S+$/.test(field("email").value.trim());
+        }
+
+        // Country / Region dropdown
+        var COUNTRIES = [
+          "Australia",
+          "Bangladesh",
+          "Brazil",
+          "Canada",
+          "China",
+          "Egypt",
+          "France",
+          "Germany",
+          "India",
+          "Indonesia",
+          "Italy",
+          "Japan",
+          "Kenya",
+          "Malaysia",
+          "Nepal",
+          "Netherlands",
+          "Nigeria",
+          "Pakistan",
+          "Philippines",
+          "Saudi Arabia",
+          "Singapore",
+          "South Africa",
+          "South Korea",
+          "Spain",
+          "Sri Lanka",
+          "Sweden",
+          "Switzerland",
+          "Turkey",
+          "United Arab Emirates",
+          "United Kingdom",
+          "United States",
+          "Vietnam",
+          "Other",
+        ];
+        field("country").innerHTML =
+          '<option value="">— Select country / region —</option>' +
+          COUNTRIES.map(function (cn) {
+            return '<option value="' + cn + '">' + cn + "</option>";
+          }).join("");
+
+        // Show / hide password
+        form.querySelectorAll(".pw-toggle").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var inp = btn.closest(".pw-wrap").querySelector("input");
+            var show = inp.type === "password";
+            inp.type = show ? "text" : "password";
+            btn.textContent = show ? "Hide" : "Show";
+          });
+        });
+
+        var sendBtn = document.getElementById("send-code");
+        var verifyBtn = document.getElementById("verify-code");
+        var otpField = document.getElementById("otp-field");
+        var otpInput = field("otp");
+        var otpOk = document.getElementById("otp-ok");
+        var createBtn = document.getElementById("create-btn");
+
+        function passwordsMatch() {
+          var p = field("password").value,
+            c = field("confirm").value;
+          return p !== "" && p === c;
+        }
+
+        var REQ_LABELS = {
+          verify: { off: "Verify your email", on: "Email verified" },
+          match: {
+            off: "Create & confirm password match",
+            on: "Passwords matched",
+          },
+        };
+        function setReq(key, ok) {
+          var item = form.querySelector('.req-item[data-k="' + key + '"]');
+          item.classList.toggle("ok", ok);
+          item.innerHTML =
+            '<span class="req-ico">' +
+            (ok ? "✓" : "○") +
+            "</span> " +
+            REQ_LABELS[key][ok ? "on" : "off"];
+        }
+
+        function updateGate() {
+          var match = passwordsMatch();
+          // live mismatch feedback only once the user has typed in confirm
+          setErr("confirm", field("confirm").value !== "" && !match);
+          setReq("verify", verified);
+          setReq("match", match);
+          if (verified && match) createBtn.removeAttribute("disabled");
+          else createBtn.setAttribute("disabled", "disabled");
+        }
+
+        // Re-verify if the email is changed after verifying.
+        field("email").addEventListener("input", function () {
+          if (verified) {
+            verified = false;
+            otpOk.style.display = "none";
+            otpInput.removeAttribute("readonly");
+            verifyBtn.removeAttribute("disabled");
+            CMS.toast("Email changed", "Please verify your email again.");
+          }
+          updateGate();
+        });
+
+        field("password").addEventListener("input", updateGate);
+        field("confirm").addEventListener("input", updateGate);
+
+        sendBtn.addEventListener("click", function () {
+          if (!emailOk()) {
+            setErr("email", true);
+            CMS.toast(
+              "Enter a valid email",
+              "We need a valid email to send the code.",
+              "err",
+            );
+            return;
+          }
+          setErr("email", false);
+          if (CMS.auth.emailExists(field("email").value.trim())) {
+            CMS.toast(
+              "Account exists",
+              "This email already has an account — please log in.",
+              "err",
+            );
+            return;
+          }
+          otpField.style.display = "";
+          otpInput.focus();
+          CMS.toast(
+            "Code sent",
+            "Enter any 6-digit code to verify (prototype).",
+          );
+        });
+
+        verifyBtn.addEventListener("click", function () {
+          var code = otpInput.value.trim();
+          if (!/^\d{6}$/.test(code)) {
+            setErr("otp", true);
+            CMS.toast("Invalid code", "Enter any 6-digit code.", "err");
+            return;
+          }
+          setErr("otp", false);
+          verified = true;
+          otpOk.style.display = "";
+          otpInput.setAttribute("readonly", "readonly");
+          verifyBtn.setAttribute("disabled", "disabled");
+          updateGate();
+          CMS.toast(
+            "Email verified",
+            passwordsMatch()
+              ? "You can now create your account."
+              : "Now set matching passwords to continue.",
+          );
+        });
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          // Button is only enabled when valid, but guard the cases with clear messages anyway.
+          if (!verified) {
+            CMS.toast(
+              "Verify your email first",
+              "Use ‘Send code’ then ‘Verify’ to confirm your email.",
+              "err",
+            );
+            return;
+          }
+          if (!passwordsMatch()) {
+            setErr("confirm", true);
+            CMS.toast(
+              "Passwords don’t match",
+              "Your create and confirm passwords must be the same.",
+              "err",
+            );
+            return;
+          }
+
+          var req = [
+            "firstName",
+            "lastName",
+            "email",
+            "country",
+            "affiliation",
+            "password",
+            "confirm",
+          ];
+          var ok = true;
+          req.forEach(function (k) {
+            var bad = !String(field(k).value).trim();
+            setErr(k, bad);
+            if (bad) ok = false;
+          });
+          if (!emailOk()) {
+            setErr("email", true);
+            ok = false;
+          }
+          if (!ok) {
+            CMS.toast(
+              "Please check the form",
+              "Some required details are missing or invalid.",
+              "err",
+            );
+            return;
+          }
+
+          CMS.auth.signup({
+            firstName: field("firstName").value.trim(),
+            lastName: field("lastName").value.trim(),
+            email: field("email").value.trim(),
+            mobile: field("mobile").value.trim(),
+            country: field("country").value,
+            affiliation: field("affiliation").value.trim(),
+            password: field("password").value,
+          });
+          CMS.toast("Account created", "Signing you in…");
+          // If the user arrived from an invitation link, continue accepting it.
+          var returnInv = CMS.param("returnInv");
+          setTimeout(function () {
+            location.href = returnInv
+              ? "accept-invitation.html?inv=" + encodeURIComponent(returnInv)
+              : CMS.auth.landingHref();
+          }, 700);
+        });
+      })();
+    </script>
+  </body>
+</html>

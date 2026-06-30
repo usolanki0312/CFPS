@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="dashboard-admin">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Conference Admin</h1>
+      <p>Overview of conferences you manage. Set up a conference, configure its tracks, then publish the Call for Papers.</p>
+    </div>
+    <div class="grid grid-3" id="stats"></div>
+    <div class="card">
+      <div class="head-row" style="margin-bottom:14px">
+        <div class="card-title mb0">Your conferences</div>
+        <a class="btn btn-primary btn-sm" href="create-conference.html">＋ Create Conference</a>
+      </div>
+      <div id="conf-list"></div>
+    </div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var nConf = db.conferences.length;
+    var nTracks = db.tracks.length;
+    var nPapers = db.papers.length;
+    c.querySelector("#stats").innerHTML =
+      stat(nConf, "Conferences") + stat(nTracks, "Tracks configured") + stat(nPapers, "Papers submitted");
+    function stat(n, l){ return '<div class="stat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+
+    var box = c.querySelector("#conf-list");
+    if (!db.conferences.length) {
+      box.innerHTML = '<div class="empty"><div class="ico">▤</div><h3>No conferences yet</h3><p>Create your first conference to get started.</p><a class="btn btn-primary" href="create-conference.html">Create Conference</a></div>';
+      return;
+    }
+    var rows = db.conferences.map(function (cf) {
+      var tracks = db.tracks.filter(function (t){ return t.conferenceId === cf.id; }).length;
+      return '<tr>' +
+        '<td><div style="font-weight:600">'+CMS.esc(cf.name)+'</div><div class="muted">'+CMS.esc(cf.acronym)+' · '+CMS.esc(cf.id)+'</div></td>' +
+        '<td>'+CMS.esc(cf.city)+', '+CMS.esc(cf.country)+'</td>' +
+        '<td>'+tracks+'</td>' +
+        '<td>'+CMS.statusBadge(cf.status)+'</td>' +
+        '<td class="t-actions">' +
+          '<a class="btn btn-ghost btn-sm" href="configure-tracks.html?conf='+cf.id+'">Tracks</a>' +
+          '<a class="btn btn-ghost btn-sm" href="publish-cfp.html?conf='+cf.id+'">CFP</a>' +
+        '</td></tr>';
+    }).join("");
+    box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Conference</th><th>Location</th><th>Tracks</th><th>Status</th><th class="text-right">Manage</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  })();
+  </script>
+</body>
+</html>

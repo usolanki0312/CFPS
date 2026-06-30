@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Track Lead Dashboard · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="dashboard-lead">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Track Lead</h1>
+      <p>Assign reviewers to submitted papers, review the analysis of completed reviews, and make acceptance decisions.</p>
+    </div>
+    <div class="grid grid-3" id="stats"></div>
+    <div class="card">
+      <div class="card-title">Papers in your tracks</div>
+      <div id="papers"></div>
+    </div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var lead = CMS.currentLead(db);
+    var myTrackIds = CMS.currentLeadTrackIds(db);
+    // Only papers from the tracks this lead owns.
+    var papers = lead ? db.papers.filter(function(p){ return myTrackIds.indexOf(p.trackId) >= 0; }) : [];
+
+    if (!lead) {
+      c.querySelector("#stats").innerHTML = "";
+      c.querySelector("#papers").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>Not set up as a Track Lead</h3><p>Accept a Track Lead invitation to activate this workspace. Papers in your tracks will then appear here.</p></div>';
+      return;
+    }
+
+    var myAssignments = db.assignments.filter(function(a){ return myTrackIds.indexOf(a.trackId) >= 0; });
+    var decided = papers.filter(function(p){ return ["accepted","rejected","revision"].indexOf(p.status)>=0; }).length;
+
+    c.querySelector("#stats").innerHTML =
+      '<div class="stat"><div class="n">'+papers.length+'</div><div class="l">Papers in my tracks</div></div>' +
+      '<div class="stat"><div class="n">'+myAssignments.length+'</div><div class="l">Reviewer assignments</div></div>' +
+      '<div class="stat"><div class="n">'+decided+'</div><div class="l">Decisions made</div></div>';
+
+    if (!papers.length) {
+      c.querySelector("#papers").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>No papers yet</h3><p>No papers have been submitted to your tracks yet.</p></div>';
+      return;
+    }
+
+    c.querySelector("#papers").innerHTML = '<div class="table-wrap"><table><thead><tr><th>Paper</th><th>Track</th><th>Reviewers</th><th>Status</th><th class="text-right">Manage</th></tr></thead><tbody>' +
+      papers.map(function (p) {
+        var t = db.tracks.find(function(x){return x.id===p.trackId;}) || {};
+        var asg = db.assignments.filter(function(a){ return a.paperId===p.id; }).length;
+        var own = CMS.isOwnPaper(p);
+        return '<tr><td><div style="font-weight:600">'+CMS.esc(p.title)+'</div><div class="muted small">'+CMS.esc(p.id)+(own?' · <span class="badge rejected">Your paper</span>':'')+'</div></td>' +
+          '<td>'+CMS.esc(t.name||"—")+'</td><td>'+asg+'</td><td>'+CMS.statusBadge(p.status)+'</td>' +
+          '<td class="text-right t-actions"><a class="btn btn-ghost btn-sm" href="review-assignment.html">Assign</a><a class="btn btn-ghost btn-sm" href="acceptance-decision.html">Decide</a></td></tr>';
+      }).join("") + '</tbody></table></div>';
+  })();
+  </script>
+</body>
+</html>

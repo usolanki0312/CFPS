@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="onboarding">
+  <template id="page-content">
+    <div class="page-head">
+      <h1 id="welcome">Welcome</h1>
+      <p>Get started by creating a conference or browsing open Calls for Papers. Your workspaces unlock as you take actions.</p>
+    </div>
+
+    <div id="invites-box"></div>
+
+    <div class="grid grid-2" id="actions">
+      <a class="card" href="create-conference.html" style="display:block">
+        <div class="card-title">＋ Create Conference</div>
+        <p class="muted small" style="margin:0">Set up a new conference. This activates your <strong>Conference Admin</strong> workspace.</p>
+      </a>
+      <a class="card" href="public-cfp.html" style="display:block">
+        <div class="card-title">▦ Browse Public CFPs</div>
+        <p class="muted small" style="margin:0">Explore open Calls for Papers. Submitting a paper activates your <strong>Author</strong> workspace.</p>
+      </a>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Recent Activity</div>
+      <div id="activity-box">
+        <div class="empty" style="padding:40px 20px">
+          <div class="ico">◷</div>
+          <h3>No recent activity</h3>
+          <p>Your recent actions will appear here once you start using the application.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var cu = CMS.auth.current();
+    if (cu) {
+      document.querySelector(".content #welcome").textContent = "Welcome, " + cu.firstName;
+
+      // Pending Track Lead / Reviewer invitations for this account.
+      var myInvites = (db.invitations || []).filter(function (i) {
+        return i.status === "pending" && i.email && i.email.toLowerCase() === cu.email.toLowerCase();
+      });
+      var invBox = document.querySelector(".content #invites-box");
+      if (myInvites.length && invBox) {
+        invBox.innerHTML = '<div class="card" style="border-color:#dedcf7">' +
+          '<div class="card-title">Pending invitations (' + myInvites.length + ')</div>' +
+          '<p class="card-sub">You have been invited to join a conference team. Click to review and accept.</p>' +
+          myInvites.map(function (inv) {
+            var conf = db.conferences.find(function (x) { return x.id === inv.conferenceId; }) || {};
+            var track = db.tracks.find(function (x) { return x.id === inv.trackId; }) || {};
+            var label = CMS.WORKSPACES[inv.type] ? CMS.WORKSPACES[inv.type].label : inv.type;
+            return '<a class="act-item" href="accept-invitation.html?inv=' + inv.id + '">' +
+              '<span class="act-ic">✉</span>' +
+              '<span class="act-body"><span class="act-title">' + CMS.esc(label) + ' · ' + CMS.esc(conf.acronym || conf.name || "") + '</span>' +
+              '<span class="act-sub">Track: ' + CMS.esc(track.name || "—") + ' · invited by ' + CMS.esc(inv.invitedBy || "—") + '</span></span>' +
+              '<span class="act-go">›</span></a>';
+          }).join("") + '</div>';
+      }
+
+      var myActivities = (db.activities || []).filter(function (act) {
+        return act.email === cu.email;
+      });
+
+      myActivities.sort(function (a, b) {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
+
+      var box = document.querySelector(".content #activity-box");
+      if (myActivities.length && box) {
+        box.innerHTML = '<ul class="wf-timeline" style="margin: 10px 0 0 10px; padding: 0">' + myActivities.map(function (act) {
+          var actionLabel = "";
+          var icon = "✓";
+          var detailHref = "#";
+
+          if (act.action === "create_conference") {
+            actionLabel = "Created conference: <strong>" + CMS.esc(act.title) + "</strong>";
+            icon = "+";
+            detailHref = "conference-overview.html?conf=" + act.id;
+          } else if (act.action === "submit_paper") {
+            actionLabel = "Submitted paper: <strong>" + CMS.esc(act.title) + "</strong>";
+            icon = "↑";
+            detailHref = "submission-detail.html?id=" + act.id;
+          } else if (act.action === "update_paper") {
+            actionLabel = "Resubmitted paper: <strong>" + CMS.esc(act.title) + "</strong>";
+            icon = "⟲";
+            detailHref = "submission-detail.html?id=" + act.id;
+          }
+
+          return '<li class="wf-step done" style="display:flex;gap:14px;margin-bottom:14px">' +
+            '<span class="wf-bullet" style="background:var(--primary-l);color:var(--primary-d);font-weight:bold;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex-shrink:0">' + icon + '</span>' +
+            '<div class="wf-body" style="flex:1">' +
+              '<div class="wf-head" style="display:flex;justify-content:between;align-items:center;gap:10px">' +
+                '<span class="wf-label" style="font-size:14px"><a href="' + detailHref + '" style="color:var(--text);text-decoration:none">' + actionLabel + '</a></span>' +
+                '<span class="wf-owner" style="margin-left:auto;font-size:12px;color:var(--muted)">' + CMS.fmtDate(act.timestamp.slice(0, 10)) + '</span>' +
+              '</div>' +
+              '<div class="wf-detail" style="font-size:12px;color:var(--muted);margin-top:2px">ID: ' + CMS.esc(act.id) + '</div>' +
+            '</div>' +
+          '</li>';
+        }).join("") + '</ul>';
+      }
+    }
+  })();
+  </script>
+</body>
+</html>

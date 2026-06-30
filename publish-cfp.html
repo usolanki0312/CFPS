@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Publish CFP · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="publish-cfp">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Publish Call for Papers</h1>
+      <p id="conf-sub">Write the CFP content and publish it. Once published, authors can view requirements and submit papers.</p>
+    </div>
+
+    <div id="conf-picker"></div>
+    <div id="precond"></div>
+    <div id="public-box"></div>
+
+    <form id="cfp-form" class="card">
+      <div class="head-row" style="margin-bottom:12px">
+        <div class="card-title mb0">CFP Content</div>
+        <div id="cfp-status"></div>
+      </div>
+      <div class="field">
+        <label>CFP Content <span class="req">*</span></label>
+        <textarea name="cfpContent" style="min-height:200px" placeholder="Describe the call: scope, submission requirements, formatting, deadlines, review process…"></textarea>
+        <div class="field-error">CFP content is required before publishing.</div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="publish-btn">Publish CFP</button>
+        <button type="button" class="btn btn-ghost" id="save-draft">Save as draft</button>
+        <a class="btn btn-ghost" id="cancel-link" href="#">Cancel</a>
+      </div>
+    </form>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    // Single active conference (workspace context): URL ?conf or remembered.
+    var confId = CMS.param("conf") || CMS.getConf() || (db.conferences[0] && db.conferences[0].id);
+    var conf = db.conferences.find(function (x){ return x.id === confId; });
+    c.querySelector("#cancel-link").setAttribute("href", "conference-overview.html?conf=" + confId);
+
+    var tracks = db.tracks.filter(function (t){ return t.conferenceId === confId; });
+    var form = c.querySelector("#cfp-form");
+    var ta = form.querySelector('[name="cfpContent"]');
+    if (conf) {
+      c.querySelector("#conf-sub").innerHTML = 'Call for Papers for <strong>'+CMS.esc(conf.name)+'</strong> ('+CMS.esc(conf.id)+').';
+      ta.value = conf.cfpContent || "";
+      c.querySelector("#cfp-status").innerHTML = CMS.statusBadge(conf.status === "cfp" ? "cfp" : "draft");
+    }
+
+    // Preconditions: at least one track configured AND every track has a track lead.
+    var leadless = tracks.filter(function (t){ return !t.trackLeadId; });
+    var publishable = tracks.length > 0 && leadless.length === 0;
+    if (!tracks.length) {
+      c.querySelector("#precond").innerHTML =
+        '<div class="notice warn"><span>⚠</span><div>This conference has <strong>no tracks configured</strong>. Add at least one track before publishing the CFP. <a href="configure-tracks.html?conf='+confId+'">Configure tracks →</a></div></div>';
+    } else if (leadless.length) {
+      c.querySelector("#precond").innerHTML =
+        '<div class="notice warn"><span>⚠</span><div><strong>'+leadless.length+' track(s) have no track lead assigned:</strong> '+leadless.map(function(t){return CMS.esc(t.name);}).join(", ")+'. Assign a track lead to every track before publishing. <a href="configure-tracks.html?conf='+confId+'">Assign track leads →</a></div></div>';
+    } else {
+      c.querySelector("#precond").innerHTML =
+        '<div class="notice"><span>✓</span><div>'+tracks.length+' track(s) configured, each with a track lead assigned. Ready to publish.</div></div>';
+    }
+    if (!publishable) form.querySelector("#publish-btn").setAttribute("disabled", "disabled");
+
+    function persist(publish) {
+      conf.cfpContent = ta.value;
+      if (publish) { conf.status = "cfp"; conf.publicSlug = CMS.slug(conf.acronym); }
+      CMS.save(db);
+    }
+
+    // Public CFP web page panel — shown once the CFP is published.
+    function renderPublic() {
+      var box = c.querySelector("#public-box");
+      if (!conf || conf.status !== "cfp") { box.innerHTML = ""; return; }
+      var url = CMS.publicUrl(conf);
+      var href = CMS.publicHref(conf);
+      box.innerHTML =
+        '<div class="card" style="border-color:#cfe9df;background:linear-gradient(0deg,#f1faf6,#f1faf6)">' +
+          '<div class="head-row" style="margin-bottom:12px"><div class="card-title mb0">🌐 Public CFP web page</div>'+CMS.statusBadge("published")+'</div>' +
+          '<p class="small muted" style="margin-top:-6px">This call is live. Share the public link below — authors can read the CFP and submit without signing in to the admin area.</p>' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px">' +
+            '<input type="text" id="public-url" value="'+CMS.esc(url)+'" readonly style="flex:1;min-width:240px;font-weight:600;color:var(--primary-d)">' +
+            '<button type="button" class="btn btn-ghost btn-sm" id="copy-url">Copy link</button>' +
+            '<a class="btn btn-primary btn-sm" href="'+href+'" target="_blank" rel="noopener">Open public page ↗</a>' +
+          '</div>' +
+        '</div>';
+      var copyBtn = box.querySelector("#copy-url");
+      copyBtn.addEventListener("click", function () {
+        var inp = box.querySelector("#public-url");
+        inp.select(); inp.setSelectionRange(0, 99999);
+        var done = function(){ copyBtn.textContent = "Copied ✓"; setTimeout(function(){ copyBtn.textContent = "Copy link"; }, 1500); };
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(inp.value).then(done, function(){ try{document.execCommand("copy");}catch(e){} done(); }); }
+        else { try { document.execCommand("copy"); } catch (e) {} done(); }
+      });
+    }
+    renderPublic();
+
+    form.querySelector("#save-draft").addEventListener("click", function () {
+      if (!conf) return;
+      persist(false);
+      CMS.toast("Draft saved", "CFP content stored. Not yet visible to authors.");
+    });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var fld = ta.closest(".field");
+      fld.classList.remove("invalid");
+      if (!ta.value.trim()) { fld.classList.add("invalid"); CMS.toast("CFP content required", "Add content before publishing.", "err"); return; }
+      if (!tracks.length) { CMS.toast("No tracks configured", "Add at least one track first.", "err"); return; }
+      if (leadless.length) { CMS.toast("Track leads missing", "Assign a track lead to every track first.", "err"); return; }
+      persist(true);
+      c.querySelector("#cfp-status").innerHTML = CMS.statusBadge("cfp");
+      renderPublic();
+      CMS.toast("CFP published", "Public web page generated — authors can now view and submit.");
+    });
+  })();
+  </script>
+</body>
+</html>

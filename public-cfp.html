@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Call for Papers · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* Public page = no admin shell; its own light marketing-style layout */
+    body { background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(91,84,214,.16), transparent 60%),
+      radial-gradient(900px 480px at 100% 0%, rgba(16,163,127,.10), transparent 55%),
+      var(--bg); }
+    .pub-nav {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 28px; background: rgba(255,255,255,.8);
+      backdrop-filter: saturate(180%) blur(10px); -webkit-backdrop-filter: saturate(180%) blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+    .pub-nav .brand { border: none; padding: 0; }
+    .pub-wrap { max-width: 960px; margin: 0 auto; padding: 0 24px 70px; }
+    .hero { text-align: center; padding: 56px 12px 36px; }
+    .hero .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+      color: var(--accent); background: #e7f6f0; border: 1px solid #cdeadf;
+      padding: 5px 13px; border-radius: 999px;
+    }
+    .hero h1 {
+      font-size: 36px; line-height: 1.15; letter-spacing: -.8px; margin: 16px auto 8px; max-width: 760px;
+      background: linear-gradient(120deg, #2a2f45, #534cd1);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero .acr { font-size: 15px; font-weight: 700; color: var(--primary-d); }
+    .hero .meta { color: var(--muted); font-size: 14px; margin-top: 12px; }
+    .hero .cta { display: flex; gap: 12px; justify-content: center; margin-top: 26px; flex-wrap: wrap; }
+    .hero .btn { padding: 12px 22px; font-size: 14.5px; }
+    .pub-grid { display: grid; grid-template-columns: 1fr 320px; gap: 22px; align-items: start; }
+    @media (max-width: 820px){ .pub-grid { grid-template-columns: 1fr; } }
+    .prose { white-space: pre-wrap; color: #38414f; font-size: 14.5px; line-height: 1.7; }
+    .track-item { border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; transition: border-color .15s, transform .15s; }
+    .track-item:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .date-row { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px dashed var(--border-2); font-size: 13.5px; }
+    .date-row:last-child { border-bottom: none; }
+    .date-row .d { font-weight: 700; color: var(--primary-d); }
+    .sticky-side { position: sticky; top: 84px; }
+    .pub-foot { text-align: center; color: var(--muted-2); font-size: 12.5px; padding: 30px 0 6px; }
+  </style>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="pub-nav">
+    <div class="brand"><span class="logo">CM</span><span>ConfManage</span></div>
+    <a class="btn btn-ghost btn-sm" href="index.html">Author / Admin portal</a>
+  </div>
+  <div class="pub-wrap" id="root"></div>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var root = document.getElementById("root");
+    var confId = CMS.param("conf");
+
+    // No specific conference → public listing of all open calls.
+    if (!confId) { renderListing(); return; }
+
+    var conf = db.conferences.find(function (x){ return x.id === confId; });
+    if (!conf || conf.status !== "cfp") {
+      root.innerHTML = notAvailable();
+      return;
+    }
+    renderConference(conf);
+
+    function renderConference(conf) {
+      var tracks = db.tracks.filter(function (t){ return t.conferenceId === conf.id; });
+      var submitHref = "submit-paper.html?conf=" + conf.id;
+
+      var trackHtml = tracks.length ? tracks.map(function (t) {
+        return '<div class="track-item"><div style="font-weight:650">'+CMS.esc(t.name)+'</div>' +
+          (t.description ? '<div class="muted small" style="margin-top:4px">'+CMS.esc(t.description)+'</div>' : '') + '</div>';
+      }).join("") : '<p class="muted small">Tracks will be announced soon.</p>';
+
+      root.innerHTML =
+        '<section class="hero">' +
+          '<span class="eyebrow">● Call for Papers — Open</span>' +
+          '<h1>'+CMS.esc(conf.name)+'</h1>' +
+          '<div class="acr">'+CMS.esc(conf.acronym)+'</div>' +
+          '<div class="meta">'+CMS.esc(conf.venue||"")+(conf.venue?' · ':'')+CMS.esc(conf.city||"")+', '+CMS.esc(conf.country||"")+' &nbsp;·&nbsp; '+CMS.fmtDate(conf.startDate)+' – '+CMS.fmtDate(conf.endDate)+'</div>' +
+          (conf.webPage ? '<div class="meta"><a href="'+CMS.esc(conf.webPage)+'" target="_blank" rel="noopener">'+CMS.esc(conf.webPage)+'</a></div>' : '') +
+          '<div class="cta"><a class="btn btn-primary" href="'+submitHref+'">Submit your paper</a>' +
+          '<a class="btn btn-ghost" href="#dates">Important dates</a></div>' +
+        '</section>' +
+
+        '<div class="pub-grid">' +
+          '<div>' +
+            '<div class="card"><div class="card-title">Call for Papers</div><div class="prose">'+CMS.esc(conf.cfpContent||"")+'</div></div>' +
+            '<div class="card"><div class="card-title">Tracks &amp; Topics</div>'+trackHtml+'</div>' +
+          '</div>' +
+          '<div class="sticky-side">' +
+            '<div class="card" id="dates"><div class="card-title">Important dates</div>' +
+              '<div class="date-row"><span>Abstract registration</span><span class="d">'+CMS.fmtDate(conf.abstractDeadline)+'</span></div>' +
+              '<div class="date-row"><span>Submission deadline</span><span class="d">'+CMS.fmtDate(conf.submissionDeadline)+'</span></div>' +
+              '<div class="date-row"><span>Conference</span><span class="d">'+CMS.fmtDate(conf.startDate)+'</span></div>' +
+            '</div>' +
+            '<div class="card" style="text-align:center"><div style="font-weight:650;margin-bottom:6px">Ready to submit?</div>' +
+              '<p class="muted small" style="margin:0 0 14px">Choose a track and upload your abstract or paper.</p>' +
+              '<a class="btn btn-primary" style="width:100%;justify-content:center" href="'+submitHref+'">Submit your paper</a></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pub-foot">Public Call for Papers page · '+CMS.esc(CMS.publicUrl(conf))+'</div>';
+    }
+
+    function renderListing() {
+      var open = db.conferences.filter(function (cf){ return cf.status === "cfp"; });
+      var cards = open.length ? open.map(function (cf) {
+        var tracks = db.tracks.filter(function (t){ return t.conferenceId === cf.id; }).length;
+        return '<a class="card" style="display:block" href="public-cfp.html?conf='+cf.id+'">' +
+          '<div style="font-size:16px;font-weight:650">'+CMS.esc(cf.name)+'</div>' +
+          '<div class="muted small" style="margin-top:3px">'+CMS.esc(cf.acronym)+' · '+CMS.esc(cf.city||"")+', '+CMS.esc(cf.country||"")+' · '+tracks+' tracks</div>' +
+          '<div class="small" style="margin-top:10px;color:var(--primary-d);font-weight:600">View Call for Papers →</div></a>';
+      }).join("") : '<div class="empty"><div class="ico">▦</div><h3>No open Calls for Papers</h3><p>Published calls will appear here.</p></div>';
+      root.innerHTML = '<section class="hero"><span class="eyebrow">● Open Calls for Papers</span><h1>Conferences accepting submissions</h1><div class="meta">Select a conference to read its call and submit.</div></section>' + cards;
+    }
+
+    function notAvailable() {
+      return '<section class="hero"><span class="eyebrow" style="color:var(--warn);background:#fdf6e9;border-color:#f0e0bd">Not available</span>' +
+        '<h1>This Call for Papers isn’t public yet</h1>' +
+        '<div class="meta">The conference may be in draft, or its CFP has not been published.</div>' +
+        '<div class="cta"><a class="btn btn-ghost" href="public-cfp.html">See open calls</a></div></section>';
+    }
+  })();
+  </script>
+</body>
+</html>

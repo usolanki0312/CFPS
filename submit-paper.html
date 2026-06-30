@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Submit Paper · ConfManage</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/theme.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+  <body data-page="submit-paper">
+    <template id="page-content">
+      <div class="page-head">
+        <h1>Submit Abstract / Paper</h1>
+        <p>
+          Enter your details, choose a track, and upload your paper. You will
+          receive a confirmation with a submission ID.
+        </p>
+      </div>
+
+      <div id="precond"></div>
+
+      <form id="sub-form">
+        <div class="card">
+          <div class="card-title">Conference &amp; track</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Conference <span class="req">*</span></label>
+              <select name="conferenceId" id="conf-sel"></select>
+              <div class="field-error"></div>
+            </div>
+            <div class="field">
+              <label>Select Topic / Track <span class="req">*</span></label>
+              <select name="trackId" id="track-sel"></select>
+              <div class="field-error">Please select a track.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Author details</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Author — First Name <span class="req">*</span></label
+              ><input type="text" name="authorFirst" />
+              <div class="field-error">Required.</div>
+            </div>
+            <div class="field">
+              <label>Author — Last Name <span class="req">*</span></label
+              ><input type="text" name="authorLast" />
+              <div class="field-error">Required.</div>
+            </div>
+            <div class="field">
+              <label>Author — Email <span class="req">*</span></label
+              ><input type="email" name="email" />
+              <div class="field-error">Valid email required.</div>
+            </div>
+            <div class="field">
+              <label>Author — Country / Region</label
+              ><input type="text" name="country" />
+              <div class="field-error"></div>
+            </div>
+            <div class="field full">
+              <label>Author — Affiliation</label
+              ><input
+                type="text"
+                name="affiliation"
+                placeholder="Institution / organization"
+              />
+              <div class="field-error"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Paper details</div>
+          <div class="form-grid">
+            <div class="field full">
+              <label>Paper — Title <span class="req">*</span></label
+              ><input type="text" name="title" />
+              <div class="field-error">Title is required.</div>
+            </div>
+            <div class="field full">
+              <label>Paper — Abstract <span class="req">*</span></label
+              ><textarea name="abstract" style="min-height: 120px"></textarea>
+              <div class="field-error">Abstract is required.</div>
+            </div>
+            <div class="field full">
+              <label>Keywords <span class="req">*</span></label
+              ><input
+                type="text"
+                name="keywords"
+                placeholder="Comma-separated keywords"
+              />
+              <div class="field-error">Keywords are required.</div>
+            </div>
+            <div class="field full" id="pdf-field">
+              <label>Paper — Upload PDF file <span class="req">*</span></label>
+              <input
+                type="file"
+                id="pdf"
+                accept="application/pdf"
+                style="display: none"
+              />
+              <div class="file-drop" id="drop">
+                Click to choose a PDF file
+                <div class="fn" id="fn"></div>
+              </div>
+              <div class="field-error">Please choose a PDF file.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Submit</button>
+          <a class="btn btn-ghost" href="cfp.html">Cancel</a>
+        </div>
+      </form>
+    </template>
+
+    <script src="assets/app.js"></script>
+    <script>
+      (function () {
+        var db = CMS.load();
+        var c = document.querySelector(".content");
+        var form = c.querySelector("#sub-form");
+        var open = db.conferences.filter(function (cf) {
+          return cf.status === "cfp";
+        });
+
+        // Submissions are only open when a CFP has been published.
+        if (!open.length) {
+          c.querySelector("#precond").innerHTML =
+            '<div class="notice warn"><span>⚠</span><div>There are no published Calls for Papers, so submissions are not open yet.</div></div>';
+          form
+            .querySelector("button[type=submit]")
+            .setAttribute("disabled", "disabled");
+        }
+
+        var confSel = c.querySelector("#conf-sel");
+        var trackSel = c.querySelector("#track-sel");
+        var preferred = CMS.param("conf");
+        confSel.innerHTML = open
+          .map(function (cf) {
+            return (
+              '<option value="' +
+              cf.id +
+              '"' +
+              (cf.id === preferred ? " selected" : "") +
+              ">" +
+              CMS.esc(cf.acronym) +
+              " — " +
+              CMS.esc(cf.name) +
+              "</option>"
+            );
+          })
+          .join("");
+
+        function fillTracks() {
+          var cid = confSel.value;
+          var tr = db.tracks.filter(function (t) {
+            return t.conferenceId === cid;
+          });
+          trackSel.innerHTML =
+            '<option value="">— Select a track —</option>' +
+            tr
+              .map(function (t) {
+                return (
+                  '<option value="' +
+                  t.id +
+                  '">' +
+                  CMS.esc(t.name) +
+                  "</option>"
+                );
+              })
+              .join("");
+        }
+        confSel.addEventListener("change", fillTracks);
+        fillTracks();
+
+        // Prefill identity from active logged-in account
+        var cu = CMS.auth.current();
+        if (cu) {
+          form.authorFirst.value = cu.firstName || "";
+          form.authorLast.value = cu.lastName || "";
+          form.email.value = cu.email || "";
+          form.country.value = cu.country || "";
+          form.affiliation.value = cu.affiliation || "";
+        }
+
+        // File picker
+        var fileName = "";
+        var drop = c.querySelector("#drop"),
+          pdf = c.querySelector("#pdf"),
+          fn = c.querySelector("#fn");
+        drop.addEventListener("click", function () {
+          pdf.click();
+        });
+        pdf.addEventListener("change", function () {
+          if (pdf.files[0]) {
+            fileName = pdf.files[0].name;
+            fn.textContent = "✓ " + fileName;
+          }
+        });
+
+        function setErr(name) {
+          form
+            .querySelector('[name="' + name + '"]')
+            .closest(".field")
+            .classList.add("invalid");
+        }
+        function clearErrs() {
+          form.querySelectorAll(".field.invalid").forEach(function (f) {
+            f.classList.remove("invalid");
+          });
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          clearErrs();
+          var d = Object.fromEntries(new FormData(form).entries());
+          var ok = true;
+          [
+            "conferenceId",
+            "trackId",
+            "authorFirst",
+            "authorLast",
+            "title",
+            "abstract",
+            "keywords",
+          ].forEach(function (k) {
+            if (!String(d[k] || "").trim()) {
+              setErr(k);
+              ok = false;
+            }
+          });
+          if (!/^\S+@\S+\.\S+$/.test(d.email || "")) {
+            setErr("email");
+            ok = false;
+          }
+          // Paper PDF is required.
+          if (!fileName) {
+            document.getElementById("pdf-field").classList.add("invalid");
+            ok = false;
+          }
+          if (!ok) {
+            CMS.toast(
+              "Please complete the form",
+              "Some required fields are missing.",
+              "err",
+            );
+            return;
+          }
+
+          var id = "PAP-" + (1001 + db.papers.length);
+          db.papers.push({
+            id: id,
+            conferenceId: d.conferenceId,
+            trackId: d.trackId,
+            authorFirst: d.authorFirst.trim(),
+            authorLast: d.authorLast.trim(),
+            email: d.email.trim(),
+            country: d.country || "",
+            affiliation: d.affiliation || "",
+            title: d.title.trim(),
+            abstract: d.abstract.trim(),
+            keywords: d.keywords || "",
+            fileName: fileName || "submission.pdf",
+            version: 1,
+            status: "submitted",
+            submissionDate: new Date().toISOString().slice(0, 10),
+            decisionRemarks: "",
+          });
+          if (!db.paperVersions) db.paperVersions = [];
+          db.paperVersions.push({
+            paperId: id,
+            version: 1,
+            title: d.title.trim(),
+            abstract: d.abstract.trim(),
+            keywords: d.keywords || "",
+            fileName: fileName || "submission.pdf",
+            date: new Date().toISOString().slice(0, 10)
+          });
+          CMS.save(db);
+          CMS.logActivity("submit_paper", d.title.trim(), id);
+          // Acquire the Author workspace on first submission.
+          CMS.auth.grantRole("author");
+          CMS.setWorkspace("author");
+          CMS.toast(
+            "Submission received",
+            id + " is now in the review pipeline.",
+          );
+          setTimeout(function () {
+            location.href = "my-submissions.html?new=" + id;
+          }, 1000);
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invitation · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card" id="card">
+      <div class="auth-brand"><span class="logo">CM</span> ConfManage</div>
+      <div id="body"></div>
+    </div>
+  </div>
+  <div class="toast-wrap" id="toast-wrap"></div>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var body = document.getElementById("body");
+    var invId = CMS.param("inv");
+    var inv = (db.invitations || []).find(function (x) { return x.id === invId; });
+    var cu = CMS.auth.current();
+
+    function wsLabel(type) { return CMS.WORKSPACES[type] ? CMS.WORKSPACES[type].label : type; }
+
+    if (!inv) {
+      body.innerHTML = '<h1 class="auth-title">Invitation not found</h1>' +
+        '<p class="auth-sub">This invitation link is invalid or has been removed.</p>' +
+        '<a class="btn btn-primary" style="width:100%;justify-content:center" href="onboarding.html">Go to Home</a>';
+      return;
+    }
+
+    var conf = db.conferences.find(function (x) { return x.id === inv.conferenceId; }) || {};
+    var track = db.tracks.find(function (x) { return x.id === inv.trackId; }) || {};
+
+    function details(extra) {
+      return '<dl class="kv" style="grid-template-columns:130px 1fr;margin:6px 0 18px">' +
+        '<dt>Workspace</dt><dd><strong>' + CMS.esc(wsLabel(inv.type)) + '</strong></dd>' +
+        '<dt>Conference</dt><dd>' + CMS.esc(conf.name || inv.conferenceId || "—") + '</dd>' +
+        '<dt>Track</dt><dd>' + CMS.esc(track.name || inv.trackId || "—") + '</dd>' +
+        '<dt>Invited by</dt><dd>' + CMS.esc(inv.invitedBy || "—") + '</dd>' +
+        '<dt>Invited email</dt><dd>' + CMS.esc(inv.email || "—") + '</dd>' +
+        (extra || "") +
+      '</dl>';
+    }
+
+    // Already actioned
+    if (inv.status === "accepted") {
+      body.innerHTML = '<h1 class="auth-title">Invitation accepted</h1>' +
+        '<p class="auth-sub">This invitation has already been accepted.</p>' + details() +
+        '<a class="btn btn-primary" style="width:100%;justify-content:center" href="onboarding.html">Go to Home</a>';
+      return;
+    }
+    if (inv.status === "declined") {
+      body.innerHTML = '<h1 class="auth-title">Invitation declined</h1>' +
+        '<p class="auth-sub">This invitation was declined.</p>' + details() +
+        '<a class="btn btn-ghost" style="width:100%;justify-content:center" href="onboarding.html">Go to Home</a>';
+      return;
+    }
+
+    // Pending — need a signed-in user to accept. One clear path: create an
+    // account, then the invitation continues automatically (returnInv).
+    if (!cu) {
+      body.innerHTML = '<h1 class="auth-title">You’re invited</h1>' +
+        '<p class="auth-sub">Create your account to accept this invitation — you’ll come straight back here.</p>' + details() +
+        '<a class="btn btn-primary" style="width:100%;justify-content:center" href="signup.html?returnInv=' + encodeURIComponent(inv.id) + '">Sign up &amp; accept</a>';
+      return;
+    }
+
+    // Pending + signed in
+    function renderPending() {
+      body.innerHTML = '<h1 class="auth-title">You’re invited</h1>' +
+        '<p class="auth-sub">Review the details below, then accept to activate your <strong>' + CMS.esc(wsLabel(inv.type)) + '</strong> workspace.</p>' +
+        details('<dt>Status</dt><dd><span class="badge pending">Pending</span></dd>') +
+        '<div class="auth-info"><span>ℹ</span><div>Accepting adds the <strong>' + CMS.esc(wsLabel(inv.type)) + '</strong> workspace to your account (' + CMS.esc(cu.email) + '). You can switch to it anytime from <strong>Settings → Workspace / Role Management</strong>.</div></div>' +
+        '<button class="btn btn-primary" id="accept" style="width:100%;justify-content:center;margin-bottom:10px">Accept invitation</button>' +
+        '<button class="btn btn-danger" id="decline" style="width:100%;justify-content:center">Decline</button>';
+
+      document.getElementById("accept").addEventListener("click", onAccept);
+      document.getElementById("decline").addEventListener("click", onDecline);
+    }
+
+    function onAccept() {
+      inv.status = "accepted";
+      // Link the account to a trackLead / reviewer record by email.
+      if (inv.type === "lead") {
+        var tl = db.trackLeads.find(function (l) { return l.email && l.email.toLowerCase() === cu.email.toLowerCase(); });
+        if (!tl) {
+          tl = { id: CMS.uid("TL-"), firstName: cu.firstName, lastName: cu.lastName, name: cu.firstName + " " + cu.lastName,
+            email: cu.email, phone: cu.mobile || "", affiliation: cu.affiliation || "", organization: cu.affiliation || "",
+            country: cu.country || "", status: "accepted", conferenceId: inv.conferenceId || "" };
+          db.trackLeads.push(tl);
+        } else { tl.status = "accepted"; }
+        if (track && track.id) { track.trackLeadId = tl.id; track.trackLead = tl.name; }
+      } else if (inv.type === "reviewer") {
+        var rv = db.reviewers.find(function (r) { return r.email && r.email.toLowerCase() === cu.email.toLowerCase(); });
+        if (!rv) {
+          rv = { id: CMS.uid("REV-"), firstName: cu.firstName, lastName: cu.lastName, email: cu.email, phone: cu.mobile || "",
+            organization: cu.affiliation || "", affiliation: cu.affiliation || "", country: cu.country || "",
+            role: "Reviewer", status: "accepted", invitation: "", trackIds: [] };
+          db.reviewers.push(rv);
+        } else { rv.status = "accepted"; }
+        // Tie the reviewer to the track they accepted for (a reviewer may serve several tracks).
+        if (!rv.trackIds) rv.trackIds = [];
+        if (inv.trackId && rv.trackIds.indexOf(inv.trackId) < 0) rv.trackIds.push(inv.trackId);
+      }
+      CMS.save(db);
+      CMS.auth.grantRole(inv.type);
+
+      body.innerHTML = '<h1 class="auth-title">Workspace activated!</h1>' +
+        '<p class="auth-sub">Your <strong>' + CMS.esc(wsLabel(inv.type)) + '</strong> workspace is now available.</p>' + details() +
+        '<button class="btn btn-primary" id="go" style="width:100%;justify-content:center;margin-bottom:10px">Go to ' + CMS.esc(wsLabel(inv.type)) + ' workspace</button>' +
+        '<a class="btn btn-ghost" style="width:100%;justify-content:center" href="onboarding.html">Continue current session</a>';
+      document.getElementById("go").addEventListener("click", function () {
+        CMS.setWorkspace(inv.type);
+        location.href = CMS.WORKSPACES[inv.type] ? CMS.WORKSPACES[inv.type].home : "onboarding.html";
+      });
+    }
+
+    function onDecline() {
+      inv.status = "declined";
+      CMS.save(db);
+      body.innerHTML = '<h1 class="auth-title">Invitation declined</h1>' +
+        '<p class="auth-sub">No problem — the invitation has been declined.</p>' +
+        '<a class="btn btn-ghost" style="width:100%;justify-content:center" href="onboarding.html">Go to Home</a>';
+    }
+
+    renderPending();
+  })();
+  </script>
+</body>
+</html>

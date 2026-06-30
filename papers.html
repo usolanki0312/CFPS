@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Papers &amp; Pipeline · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="papers">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Papers &amp; Pipeline</h1>
+      <p>Submissions to this conference. Track progress in the review pipeline, filter by track or action item, and click to view submission details and reviews.</p>
+    </div>
+    
+    <div style="margin-bottom: 8px; font-weight: 650; font-size: 13px; color: var(--muted);">FILTER BY TRACK:</div>
+    <div class="pl-filters" id="track-filters" style="margin-bottom:14px"></div>
+    
+    <div style="margin-bottom: 8px; font-weight: 650; font-size: 13px; color: var(--muted);">FILTER BY PIPELINE STATUS:</div>
+    <div class="pl-filters" id="status-filters" style="margin-bottom:20px"></div>
+    
+    <div id="list"></div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var confId = CMS.param("conf") || CMS.getConf();
+    var tracks = db.tracks.filter(function (t){ return t.conferenceId === confId; });
+    var papers = db.papers.filter(function (p){ return p.conferenceId === confId; });
+
+    if (!tracks.length) {
+      c.querySelector("#track-filters").style.display = "none";
+      c.querySelector("#status-filters").style.display = "none";
+      c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">▦</div><h3>No tracks configured</h3><p>Add tracks first, then submissions can be grouped and managed.</p><a class="btn btn-primary" href="configure-tracks.html?conf='+confId+'">Configure Tracks</a></div>';
+      return;
+    }
+
+    var activeTrack = "all";
+    var activeStatus = "all";
+
+    // ----- Track filters -----
+    function countForTrack(tid) {
+      return tid === "all" ? papers.length : papers.filter(function(p){ return p.trackId === tid; }).length;
+    }
+    var trackChips = [{ id: "all", name: "All tracks" }].concat(tracks.map(function (t){ return { id: t.id, name: t.name }; }));
+    c.querySelector("#track-filters").innerHTML = trackChips.map(function (f) {
+      return '<span class="pill'+(f.id===activeTrack?' sel':'')+'" data-track="'+f.id+'">'+CMS.esc(f.name)+' ('+countForTrack(f.id)+')</span>';
+    }).join("");
+
+    c.querySelector("#track-filters").addEventListener("click", function (e) {
+      var pill = e.target.closest(".pill"); if (!pill) return;
+      activeTrack = pill.getAttribute("data-track");
+      c.querySelectorAll("#track-filters .pill").forEach(function(x){ x.classList.toggle("sel", x.getAttribute("data-track")===activeTrack); });
+      renderList();
+    });
+
+    // ----- Status filters -----
+    var STATUSES = [
+      { key: "all",          label: "All status" },
+      { key: "Author",       label: "Pending on Author" },
+      { key: "Track Lead",   label: "Pending on Track Lead" },
+      { key: "Reviewer(s)",  label: "Pending on Reviewers" },
+      { key: "completed",    label: "Completed" }
+    ];
+    function countForStatus(key) {
+      var filtered = papers.map(function (p) { return { p: p, wf: CMS.workflow(p, db) }; });
+      if (key === "all") return filtered.length;
+      if (key === "completed") return filtered.filter(function(r){ return r.wf.completed; }).length;
+      return filtered.filter(function(r){ return !r.wf.completed && r.wf.pendingOn === key; }).length;
+    }
+    c.querySelector("#status-filters").innerHTML = STATUSES.map(function (f) {
+      return '<span class="pill'+(f.key===activeStatus?' sel':'')+'" data-status="'+f.key+'">'+f.label+' ('+countForStatus(f.key)+')</span>';
+    }).join("");
+
+    c.querySelector("#status-filters").addEventListener("click", function (e) {
+      var pill = e.target.closest(".pill"); if (!pill) return;
+      activeStatus = pill.getAttribute("data-status");
+      c.querySelectorAll("#status-filters .pill").forEach(function(x){ x.classList.toggle("sel", x.getAttribute("data-status")===activeStatus); });
+      renderList();
+    });
+
+    // ----- Visibility Filter Logic -----
+    function visible() {
+      return papers.filter(function (p) {
+        var matchTrack = (activeTrack === "all" || p.trackId === activeTrack);
+        if (!matchTrack) return false;
+
+        var wf = CMS.workflow(p, db);
+        if (activeStatus === "all") return true;
+        if (activeStatus === "completed") return wf.completed;
+        return (!wf.completed && wf.pendingOn === activeStatus);
+      });
+    }
+
+    function renderList() {
+      var box = c.querySelector("#list");
+      var list = visible();
+      if (!list.length) {
+        box.innerHTML = '<div class="empty"><div class="ico">≣</div><h3>No papers match these filters</h3><p>Try resetting track or status filters.</p></div>';
+        return;
+      }
+
+      box.innerHTML = list.map(function (p) {
+        var t = db.tracks.find(function(x){ return x.id === p.trackId; }) || {};
+        var reviews = db.reviews.filter(function(r){ return r.paperId === p.id; });
+        
+        var reviewsHtml = reviews.length
+          ? reviews.map(function(r){
+              var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
+              return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--surface)">' +
+                '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="score-pill">Score '+r.score+'/10</span>'+
+                  '<span class="muted small">'+CMS.esc(r.recommendation)+'</span><span class="muted small" style="margin-left:auto">'+CMS.esc((rev.firstName||"Reviewer")+" "+(rev.lastName||""))+'</span></div>' +
+                '<div class="small" style="margin-top:6px;color:#38414f">'+CMS.esc(r.comments)+'</div></div>';
+            }).join("")
+          : '<div class="notice small mb0"><span>i</span><div>No reviewer scores submitted yet.</div></div>';
+
+        return '<div class="card" style="margin-bottom:16px">' +
+          '<div class="head-row" style="margin-bottom:16px"><div>' +
+            '<div style="font-size:15px;font-weight:650">'+CMS.esc(p.title)+'</div>' +
+            '<div class="muted small" style="margin-top:3px">'+CMS.esc(p.id)+' · v'+p.version+' · Track: '+CMS.esc(t.name||"—")+' · '+CMS.esc(p.authorFirst+" "+p.authorLast)+'</div>' +
+          '</div>'+CMS.statusBadge(p.status)+'</div>' +
+          CMS.trackerCompact(p, db) +
+          '<div style="margin-top:14px; display:flex; gap:10px">' +
+            '<button type="button" class="btn btn-ghost btn-sm wf-more" data-id="'+p.id+'">View timeline ▾</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm details-more" data-id="'+p.id+'">View paper details ▾</button>' +
+          '</div>' +
+          '<div class="wf-detail-wrap" id="tl-'+p.id+'" style="display:none;margin-top:14px;padding-top:10px;border-top:1px solid var(--border)"></div>' +
+          '<div class="paper-details-wrap" id="det-'+p.id+'" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">' +
+            '<div style="margin-bottom:10px"><strong>Abstract:</strong><p class="small" style="margin:4px 0 10px;color:#38414f">'+CMS.esc(p.abstract)+'</p></div>' +
+            '<div style="margin-bottom:10px"><strong>Keywords:</strong> <span class="small" style="color:#38414f">'+CMS.esc(p.keywords)+'</span></div>' +
+            '<div style="margin-bottom:14px"><strong>File:</strong> <code class="small">'+CMS.esc(p.fileName)+'</code></div>' +
+            '<div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border)">' +
+              '<strong style="display:block;margin-bottom:8px">Reviewer feedback &amp; scores:</strong>' +
+              reviewsHtml +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+
+      // Wire timeline toggles
+      box.querySelectorAll(".wf-more").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-id");
+          var wrap = c.querySelector("#tl-"+id);
+          var open = wrap.style.display !== "none";
+          if (open) {
+            wrap.style.display = "none";
+            wrap.innerHTML = "";
+            btn.textContent = "View timeline ▾";
+          } else {
+            var paper = db.papers.find(function(x){return x.id===id;});
+            wrap.innerHTML = CMS.trackerTimeline(paper, db);
+            wrap.style.display = "block";
+            btn.textContent = "Hide timeline ▴";
+          }
+        });
+      });
+
+      // Wire details toggles
+      box.querySelectorAll(".details-more").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-id");
+          var wrap = c.querySelector("#det-"+id);
+          var open = wrap.style.display !== "none";
+          if (open) {
+            wrap.style.display = "none";
+            btn.textContent = "View paper details ▾";
+          } else {
+            wrap.style.display = "block";
+            btn.textContent = "Hide paper details ▴";
+          }
+        });
+      });
+    }
+
+    renderList();
+  })();
+  </script>
+</body>
+</html>

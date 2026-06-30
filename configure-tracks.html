@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configure Tracks · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="configure-tracks">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Configure Tracks</h1>
+      <p id="conf-sub">Add tracks, assign an accepted Track Lead, or invite a new one. The CFP can only be published once every track has a track lead.</p>
+    </div>
+
+    <div id="lock-notice"></div>
+
+    <div class="grid grid-2" style="align-items:start">
+      <form id="track-form" class="card">
+        <div class="card-title">Add a track</div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Track Name <span class="req">*</span></label>
+          <input type="text" name="name" placeholder="e.g. Machine Learning & AI">
+          <div class="field-error">Track name is required.</div>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Track Description</label>
+          <textarea name="description" placeholder="Short description of the track scope"></textarea>
+        </div>
+        <div class="field" style="margin-bottom:4px">
+          <label>Maximum Papers Allowed</label>
+          <input type="number" name="maxPapers" min="1" placeholder="e.g. 30">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Add Track</button>
+        </div>
+      </form>
+
+      <div class="card">
+        <div class="head-row" style="margin-bottom:12px">
+          <div class="card-title mb0">Configured tracks</div>
+          <a class="btn btn-subtle btn-sm" id="team-link" href="#">Track Team →</a>
+        </div>
+        <div id="track-list"></div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a class="btn btn-ghost" id="back-link" href="#">← Back to Overview</a>
+      <a class="btn btn-subtle" id="to-cfp" href="#">Continue to Call For Papers →</a>
+    </div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var c = document.querySelector(".content");
+    var cu = CMS.auth.current();
+    var confId = CMS.param("conf") || CMS.getConf();
+    (function () { var d0 = CMS.load(); if (!confId) confId = d0.conferences[0] && d0.conferences[0].id; })();
+
+    c.querySelector("#back-link").setAttribute("href", "conference-overview.html?conf=" + confId);
+    c.querySelector("#to-cfp").setAttribute("href", "publish-cfp.html?conf=" + confId);
+    c.querySelector("#team-link").setAttribute("href", "track-team.html?conf=" + confId);
+    if (CMS.param("created")) CMS.toast("Conference created", "Add tracks and assign or invite a Track Lead for each.");
+
+    function isAccepted(l) { return !l.status || l.status === "accepted"; }
+    function countryOptions(sel) {
+      return '<option value="">— Country / region —</option>' +
+        CMS.COUNTRIES.map(function (cn) { return '<option value="' + cn + '"' + (cn === sel ? " selected" : "") + ">" + cn + "</option>"; }).join("");
+    }
+    function invBadge(s) {
+      return s === "accepted" ? '<span class="badge accepted">Accepted</span>'
+        : s === "declined" ? '<span class="badge rejected">Declined</span>'
+        : '<span class="badge pending">Pending</span>';
+    }
+
+    function render() {
+      var db = CMS.load();
+      var conf = db.conferences.find(function (x) { return x.id === confId; });
+      var locked = conf && conf.status === "cfp";
+      if (conf) c.querySelector("#conf-sub").innerHTML = 'Configuring tracks for <strong>' + CMS.esc(conf.name) + '</strong> (' + CMS.esc(conf.id) + '). Assign an accepted Track Lead from the dropdown, or invite a new one.';
+
+      c.querySelector("#lock-notice").innerHTML = locked
+        ? '<div class="notice" style="margin-bottom:20px"><span>⚠</span><div><strong>Call for Papers is published.</strong> Tracks and Track Lead changes are locked.</div></div>' : "";
+      var tform = c.querySelector("#track-form");
+      tform.querySelectorAll("input, textarea, button").forEach(function (el) { el.disabled = !!locked; });
+      tform.querySelector(".form-actions").style.display = locked ? "none" : "";
+
+      // Accepted track leads in this conference (for the dropdown).
+      var acceptedPool = db.trackLeads.filter(function (l) {
+        return isAccepted(l) && (l.conferenceId === confId || !l.conferenceId);
+      });
+
+      var list = db.tracks.filter(function (t) { return t.conferenceId === confId; });
+      var box = c.querySelector("#track-list");
+      if (!list.length) {
+        box.innerHTML = '<div class="empty" style="padding:30px 16px"><div class="ico">▦</div><h3>No tracks yet</h3><p>Add a track using the form on the left.</p></div>';
+        return;
+      }
+
+      box.innerHTML = list.map(function (t) {
+        var leadRec = t.trackLeadId ? db.trackLeads.find(function (l) { return l.id === t.trackLeadId; }) : null;
+        var pend = db.invitations.filter(function (i) { return i.type === "lead" && i.trackId === t.id && i.status === "pending"; });
+
+        var leadLine = leadRec
+          ? '<div class="small" style="margin-top:10px">Track Lead: <strong>' + CMS.esc(leadRec.name) + '</strong> ' + invBadge("accepted") + '</div>'
+          : '<div class="small" style="margin-top:10px;color:var(--warn)">⚠ No track lead yet</div>';
+
+        var assignBlock = !locked && acceptedPool.length
+          ? '<div class="field" style="margin-top:10px"><label>Assign an accepted track lead</label>' +
+              '<select class="tl-assign" data-track="' + t.id + '"><option value="">— Select accepted track lead —</option>' +
+              acceptedPool.map(function (l) { return '<option value="' + l.id + '"' + (l.id === t.trackLeadId ? " selected" : "") + ">" + CMS.esc(l.name) + " · " + CMS.esc(l.email) + "</option>"; }).join("") +
+              '</select></div>'
+          : '';
+
+        var pendBlock = pend.map(function (i) {
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-top:8px">' +
+            '<div class="small"><strong>' + CMS.esc(i.name || i.email) + '</strong> · ' + CMS.esc(i.email) + ' ' + invBadge(i.status) + '</div>' +
+            '<div class="t-actions"><a class="btn btn-ghost btn-sm" href="accept-invitation.html?inv=' + i.id + '">Open link</a><button class="btn btn-danger btn-sm tl-cancel" data-id="' + i.id + '">Cancel</button></div></div>';
+        }).join("");
+
+        var inviteBlock = locked ? '' :
+          '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--primary-d);font-weight:600">＋ Invite a new Track Lead</summary>' +
+          '<form class="tl-invite" data-track="' + t.id + '" style="margin-top:10px">' +
+            '<div class="form-grid">' +
+              '<div class="field"><label>First name</label><input type="text" name="firstName"></div>' +
+              '<div class="field"><label>Last name</label><input type="text" name="lastName"></div>' +
+              '<div class="field"><label>Email <span class="req">*</span></label><input type="email" name="email"></div>' +
+              '<div class="field"><label>Phone <span class="hint" style="font-weight:400">(optional)</span></label><input type="tel" name="phone"></div>' +
+              '<div class="field"><label>Affiliation</label><input type="text" name="affiliation"></div>' +
+              '<div class="field"><label>Country / Region</label><select name="country">' + countryOptions("") + '</select></div>' +
+            '</div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">＋ Invite Track Lead</button></div>' +
+          '</form></details>';
+
+        return '<div style="border:1px solid var(--border);border-radius:10px;padding:14px 15px;margin-bottom:11px">' +
+          '<div style="display:flex;justify-content:space-between;gap:10px"><div style="font-weight:650">' + CMS.esc(t.name) + '</div><span class="muted small">' + CMS.esc(t.id) + '</span></div>' +
+          (t.description ? '<div class="muted small" style="margin-top:4px">' + CMS.esc(t.description) + '</div>' : '') +
+          leadLine + assignBlock + pendBlock + inviteBlock +
+          '<div class="small" style="margin-top:8px;color:var(--muted)">Max papers: ' + CMS.esc(t.maxPapers || "—") + '</div>' +
+        '</div>';
+      }).join("");
+
+      wireTracks();
+    }
+
+    function wireTracks() {
+      // Assign an accepted lead directly.
+      c.querySelectorAll(".tl-assign").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          if (!sel.value) return;
+          var db = CMS.load();
+          var tr = db.tracks.find(function (t) { return t.id === sel.getAttribute("data-track"); });
+          var lead = db.trackLeads.find(function (l) { return l.id === sel.value; });
+          if (tr && lead) { tr.trackLeadId = lead.id; tr.trackLead = lead.name; CMS.save(db); CMS.toast("Track lead assigned", lead.name + " now leads " + tr.name); render(); }
+        });
+      });
+      // Invite a new lead -> pool entry (invited) + invitation (pending).
+      c.querySelectorAll(".tl-invite").forEach(function (f) {
+        f.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var d = Object.fromEntries(new FormData(f).entries());
+          if (!/^\S+@\S+\.\S+$/.test(d.email || "")) { CMS.toast("Valid email required", "Enter the invitee's email.", "err"); return; }
+          var db = CMS.load();
+          var trackId = f.getAttribute("data-track");
+          var track = db.tracks.find(function (t) { return t.id === trackId; }) || {};
+          var name = ((d.firstName || "") + " " + (d.lastName || "")).trim() || d.email.trim();
+          if (db.invitations.some(function (i) { return i.type === "lead" && i.trackId === trackId && i.email.toLowerCase() === d.email.toLowerCase() && i.status === "pending"; })) {
+            CMS.toast("Already invited", "A pending Track Lead invitation already exists for this email.", "err"); return;
+          }
+          // Add/refresh pool entry (status invited — will flip to accepted when they accept).
+          var pool = db.trackLeads.find(function (l) { return l.email && l.email.toLowerCase() === d.email.toLowerCase(); });
+          if (!pool) {
+            db.trackLeads.push({ id: CMS.uid("TL-"), firstName: (d.firstName || "").trim(), lastName: (d.lastName || "").trim(),
+              name: name, email: d.email.trim(), phone: (d.phone || "").trim(), affiliation: (d.affiliation || "").trim(),
+              organization: (d.affiliation || "").trim(), country: d.country || "", status: "invited", conferenceId: confId });
+          }
+          db.invitations.push({ id: CMS.uid("INV-"), type: "lead", conferenceId: confId, trackId: trackId,
+            email: d.email.trim(), name: name, status: "pending",
+            invitedBy: (cu ? cu.firstName + " " + cu.lastName : "Conference Admin") + " (Admin)", timestamp: new Date().toISOString() });
+          CMS.save(db);
+          CMS.toast("Track Lead invited", d.email.trim() + " — pending acceptance.");
+          render();
+        });
+      });
+      c.querySelectorAll(".tl-cancel").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var db = CMS.load();
+          db.invitations = db.invitations.filter(function (i) { return i.id !== btn.getAttribute("data-id"); });
+          CMS.save(db);
+          CMS.toast("Invitation removed", "");
+          render();
+        });
+      });
+    }
+
+    // Add a track
+    c.querySelector("#track-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var form = e.target;
+      var db = CMS.load();
+      var conf = db.conferences.find(function (x) { return x.id === confId; });
+      if (conf && conf.status === "cfp") return;
+      form.querySelectorAll(".field.invalid").forEach(function (f) { f.classList.remove("invalid"); });
+      var d = Object.fromEntries(new FormData(form).entries());
+      if (!String(d.name || "").trim()) {
+        form.querySelector('[name="name"]').closest(".field").classList.add("invalid");
+        CMS.toast("Track name required", "Please enter a track name.", "err"); return;
+      }
+      if (!conf) { CMS.toast("Select a conference first", "A track must belong to an existing conference.", "err"); return; }
+      var tnum = db.tracks.length + 1;
+      db.tracks.push({ id: "TRK-" + String(tnum).padStart(2, "0"), conferenceId: confId, name: d.name.trim(),
+        description: d.description || "", trackLeadId: "", trackLead: "", maxPapers: d.maxPapers || "" });
+      if (conf.status === "draft") conf.status = "configured";
+      CMS.save(db);
+      form.reset();
+      render();
+      CMS.toast("Track added", "Assign or invite a Track Lead for “" + d.name.trim() + "”.");
+    });
+
+    render();
+  })();
+  </script>
+</body>
+</html>

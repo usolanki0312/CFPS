@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Submit Review · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="review-submit">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Review Paper</h1>
+      <p>Read the paper, then record your score, comments and recommendation.</p>
+    </div>
+    <div id="wrap"></div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var me = CMS.currentReviewer(db);
+    var pid = CMS.param("paper");
+    var p = db.papers.find(function (x){ return x.id === pid; });
+    var asg = me ? db.assignments.find(function (a){ return a.paperId === pid && a.reviewerId === me.id; }) : null;
+
+    if (!p || !asg) {
+      c.querySelector("#wrap").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>Paper not available</h3><p>This paper is not assigned to you for review.</p><a class="btn btn-primary" href="review-paper.html">Back to Review Paper</a></div>';
+      return;
+    }
+    // Conflict of interest: a reviewer cannot review their own paper.
+    if (CMS.isOwnPaper(p)) {
+      c.querySelector("#wrap").innerHTML = '<div class="notice warn"><span>⚠</span><div><strong>Conflict of interest.</strong> You are an author of this paper, so you cannot review it.</div></div><a class="btn btn-primary" href="review-paper.html">Back to Review Paper</a>';
+      return;
+    }
+    var t = db.tracks.find(function(x){ return x.id===p.trackId; }) || {};
+    var existing = db.reviews.find(function (r){ return r.paperId===pid && r.reviewerId===me.id; });
+
+    c.querySelector("#wrap").innerHTML =
+      '<div class="card"><div class="card-title">Paper under review</div>' +
+        '<dl class="kv"><dt>Title</dt><dd style="font-weight:600">'+CMS.esc(p.title)+'</dd>' +
+        '<dt>Paper ID</dt><dd>'+CMS.esc(p.id)+' · v'+p.version+'</dd>' +
+        '<dt>Track</dt><dd>'+CMS.esc(t.name||"—")+'</dd>' +
+        '<dt>Keywords</dt><dd>'+CMS.esc(p.keywords||"—")+'</dd>' +
+        '<dt>File</dt><dd><a href="#" onclick="return false">'+CMS.esc(p.fileName)+'</a></dd></dl>' +
+        '<div class="divider"></div><div class="card-title">Abstract</div>' +
+        '<div class="small" style="white-space:pre-wrap;color:#38414f;line-height:1.7">'+CMS.esc(p.abstract)+'</div></div>' +
+
+      '<form id="rev-form" class="card"><div class="card-title">Your review</div>' +
+        '<div class="form-grid">' +
+          '<div class="field"><label>Score (0–10) <span class="req">*</span></label><input type="number" id="score" min="0" max="10" step="1" value="'+(existing?existing.score:'')+'" placeholder="e.g. 7"><div class="field-error">Enter a score from 0 to 10.</div></div>' +
+          '<div class="field"><label>Recommendation <span class="req">*</span></label>' +
+            '<div class="pill-row" id="rec-pills" style="margin-top:2px">' +
+              '<span class="pill" data-v="Accept">Accept</span>' +
+              '<span class="pill" data-v="Revision Required">Revision Required</span>' +
+              '<span class="pill" data-v="Reject">Reject</span>' +
+            '</div></div>' +
+          '<div class="field full"><label>Comments <span class="req">*</span></label><textarea id="comments" style="min-height:140px" placeholder="Strengths, weaknesses, and suggestions for the author">'+(existing?CMS.esc(existing.comments):'')+'</textarea><div class="field-error">Please add review comments.</div></div>' +
+        '</div>' +
+        '<div class="form-actions"><button type="submit" class="btn btn-primary">'+(existing?'Update Review':'Submit Review')+'</button>' +
+          '<a class="btn btn-ghost" href="review-paper.html">Cancel</a></div></form>';
+
+    var form = c.querySelector("#rev-form");
+    var chosen = existing ? existing.recommendation : "";
+    var pills = form.querySelectorAll("#rec-pills .pill");
+    pills.forEach(function (pill) {
+      if (pill.getAttribute("data-v") === chosen) pill.classList.add("sel");
+      pill.addEventListener("click", function () {
+        pills.forEach(function(x){ x.classList.remove("sel"); });
+        pill.classList.add("sel"); chosen = pill.getAttribute("data-v");
+      });
+    });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var scoreEl = form.querySelector("#score"), commentsEl = form.querySelector("#comments");
+      scoreEl.closest(".field").classList.remove("invalid");
+      commentsEl.closest(".field").classList.remove("invalid");
+      var score = parseInt(scoreEl.value, 10);
+      var ok = true;
+      if (isNaN(score) || score < 0 || score > 10) { scoreEl.closest(".field").classList.add("invalid"); ok = false; }
+      if (!commentsEl.value.trim()) { commentsEl.closest(".field").classList.add("invalid"); ok = false; }
+      if (!chosen) { CMS.toast("Select a recommendation", "Choose Accept, Revision Required, or Reject.", "err"); ok = false; }
+      if (!ok) return;
+
+      if (existing) {
+        existing.score = score; existing.comments = commentsEl.value.trim();
+        existing.recommendation = chosen; existing.submittedAt = new Date().toISOString().slice(0,10);
+      } else {
+        db.reviews.push({ id: CMS.uid("RV-"), paperId: pid, reviewerId: me.id,
+          score: score, recommendation: chosen, comments: commentsEl.value.trim(),
+          submittedAt: new Date().toISOString().slice(0,10) });
+      }
+      // Mark this reviewer's assignment as completed.
+      asg.status = "completed";
+      CMS.save(db);
+      CMS.toast(existing ? "Review updated" : "Review submitted", "Recorded for " + p.id + ".");
+      setTimeout(function(){ location.href = "review-paper.html"; }, 900);
+    });
+  })();
+  </script>
+</body>
+</html>

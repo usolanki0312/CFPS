@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Submissions · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="my-submissions">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>My Submissions</h1>
+      <p>Your submitted papers and their progress. Open a submission to view feedback and rewrite / resubmit it.</p>
+    </div>
+    <div id="list"></div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var ME = (CMS.auth.current() || {}).email || "demo@confmanage.org";
+    var mine = db.papers.filter(function (p){ return p.email === ME; });
+    var isNew = CMS.param("new");
+    if (isNew) CMS.toast("Submission confirmed", isNew + " was submitted successfully.");
+
+    var view = CMS.param("view") || "";
+    if (view === "history") {
+      document.title = "Submission History · ConfManage";
+      c.querySelector(".page-head h1").textContent = "Submission History";
+      c.querySelector(".page-head p").textContent = "Historical log of all version uploads, updates, and paper submissions.";
+
+      var myPaperIds = mine.map(function (p) { return p.id; });
+      var myVersions = (db.paperVersions || []).filter(function (v) {
+        return myPaperIds.indexOf(v.paperId) >= 0;
+      });
+
+      myVersions.sort(function (a, b) {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return b.version - a.version;
+      });
+
+      if (!myVersions.length) {
+        c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">🕒</div><h3>No history found</h3><p>Your submission version logs will appear here.</p></div>';
+        return;
+      }
+
+      var tableRows = myVersions.map(function (v) {
+        var p = mine.find(function (paper) { return paper.id === v.paperId; });
+        var conf = db.conferences.find(function (x) { return x.id === p.conferenceId; }) || {};
+        return '<tr>' +
+          '<td><strong>' + CMS.esc(v.paperId) + '</strong></td>' +
+          '<td>' + CMS.esc(conf.acronym || "") + '</td>' +
+          '<td>v' + v.version + '</td>' +
+          '<td>' + CMS.esc(v.title) + '</td>' +
+          '<td><code>' + CMS.esc(v.fileName) + '</code></td>' +
+          '<td>' + CMS.fmtDate(v.date) + '</td>' +
+          '<td>' + CMS.statusBadge(v.version === p.version ? p.status : "superseded") + '</td>' +
+        '</tr>';
+      }).join("");
+
+      c.querySelector("#list").innerHTML =
+        '<div class="card" style="padding:0;overflow:hidden">' +
+          '<table class="table mb0">' +
+            '<thead>' +
+              '<tr>' +
+                '<th>ID</th>' +
+                '<th>Conference</th>' +
+                '<th>Ver</th>' +
+                '<th>Title</th>' +
+                '<th>File</th>' +
+                '<th>Date</th>' +
+                '<th>Status</th>' +
+              '</tr>' +
+            '</thead>' +
+            '<tbody>' + tableRows + '</tbody>' +
+          '</table>' +
+        '</div>';
+    } else {
+      if (!mine.length) {
+        c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>No submissions yet</h3><p>Submit a paper to a published Call for Papers.</p><a class="btn btn-primary" href="cfp.html">Browse CFPs</a></div>';
+        return;
+      }
+
+      c.querySelector("#list").innerHTML = mine.map(function (p) {
+        var conf = db.conferences.find(function(x){return x.id===p.conferenceId;}) || {};
+        var track = db.tracks.find(function(t){return t.id===p.trackId;}) || {};
+        var href = "submission-detail.html?id=" + p.id;
+        return '<div class="card">' +
+          '<div class="head-row"><div><div style="font-size:15px;font-weight:650">'+CMS.esc(p.title)+'</div>' +
+            '<div class="muted small" style="margin-top:3px">'+CMS.esc(p.id)+' · v'+p.version+' · '+CMS.esc(conf.acronym||"")+' · Track: '+CMS.esc(track.name||"—")+'</div></div>' +
+            CMS.statusBadge(p.status)+'</div>' +
+          '<div class="divider"></div>' + CMS.trackerCompact(p, db) +
+          '<div class="divider"></div>' +
+          '<div class="t-actions" style="justify-content:flex-start"><a class="btn btn-primary btn-sm" href="'+href+'">Open submission →</a></div>' +
+        '</div>';
+      }).join("");
+    }
+  })();
+  </script>
+</body>
+</html>

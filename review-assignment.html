@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Assignment · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="review-assignment">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Review Assignment</h1>
+      <p>Assign reviewers from your team to papers in your tracks. Manage your reviewer team from <strong>Track Team</strong>.</p>
+    </div>
+    <div id="wrap"></div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var lead = CMS.currentLead(db);
+    var myTrackIds = CMS.currentLeadTrackIds(db);
+
+    if (!lead) {
+      c.querySelector("#wrap").innerHTML = '<div class="empty"><div class="ico">⇄</div><h3>Not set up as a Track Lead</h3><p>Accept a Track Lead invitation to assign reviewers to your tracks.</p></div>';
+      return;
+    }
+    if (!myTrackIds.length) {
+      c.querySelector("#wrap").innerHTML = '<div class="empty"><div class="ico">⇄</div><h3>No tracks assigned</h3><p>You are not leading any tracks yet.</p></div>';
+      return;
+    }
+
+    c.querySelector("#wrap").innerHTML =
+      '<div class="card"><div class="card-title">Assign a reviewer</div>' +
+        '<div class="form-grid">' +
+          '<div class="field"><label>Track / Topic <span class="req">*</span></label><select id="track-sel"></select></div>' +
+          '<div class="field"><label>Paper <span class="req">*</span></label><select id="paper-sel"></select></div>' +
+          '<div class="field"><label>Reviewer <span class="req">*</span></label><select id="rev-sel"></select></div>' +
+          '<div class="field"><label>Assigned By</label><input type="text" id="by" value="' + CMS.esc(lead.name) + ' (Track Lead)" readonly></div>' +
+        '</div>' +
+        '<div class="form-actions"><button class="btn btn-primary" id="assign-btn">Assign Reviewer</button></div></div>' +
+      '<div class="card"><div class="head-row" style="margin-bottom:12px"><div class="card-title mb0">Current assignments</div>' +
+        '<a class="btn btn-subtle btn-sm" href="track-team.html">Manage reviewer team →</a></div>' +
+        '<div id="asg-list"></div></div>';
+
+    var trackSel = c.querySelector("#track-sel");
+    var paperSel = c.querySelector("#paper-sel");
+    var revSel = c.querySelector("#rev-sel");
+
+    // Only the lead's tracks.
+    trackSel.innerHTML = db.tracks.filter(function (t){ return myTrackIds.indexOf(t.id) >= 0; })
+      .map(function (t){ return '<option value="'+t.id+'">'+CMS.esc(t.name)+'</option>'; }).join("");
+
+    function fillPapers() {
+      var tid = trackSel.value;
+      var ps = db.papers.filter(function (p){ return p.trackId === tid; });
+      paperSel.innerHTML = ps.length
+        ? ps.map(function (p){ return '<option value="'+p.id+'">'+CMS.esc(p.id)+' — '+CMS.esc(p.title)+'</option>'; }).join("")
+        : '<option value="">No submitted papers in this track</option>';
+      fillReviewers();
+    }
+    // Accepted reviewer pool, excluding the paper's own author (conflict of interest).
+    function fillReviewers() {
+      var paper = db.papers.find(function (p){ return p.id === paperSel.value; });
+      var pool = db.reviewers.filter(function (r){
+        return !(paper && paper.email && r.email && paper.email.toLowerCase() === r.email.toLowerCase());
+      });
+      revSel.innerHTML = pool.length
+        ? pool.map(function (r){ return '<option value="'+r.id+'">'+CMS.esc(r.firstName+" "+r.lastName)+' — '+CMS.esc(r.organization||"—")+'</option>'; }).join("")
+        : '<option value="">No eligible reviewers — invite some in Track Team</option>';
+    }
+    trackSel.addEventListener("change", fillPapers);
+    paperSel.addEventListener("change", fillReviewers);
+    fillPapers();
+
+    function renderAssignments() {
+      var box = c.querySelector("#asg-list");
+      var mine = db.assignments.filter(function (a){ return myTrackIds.indexOf(a.trackId) >= 0; });
+      if (!mine.length) { box.innerHTML = '<div class="empty" style="padding:30px"><div class="ico">⇄</div><h3>No assignments yet</h3><p>Assign a reviewer using the form above.</p></div>'; return; }
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Paper</th><th>Track</th><th>Reviewer</th><th>Assigned</th><th>Status</th></tr></thead><tbody>' +
+        mine.map(function (a) {
+          var p = db.papers.find(function(x){return x.id===a.paperId;}) || {};
+          var t = db.tracks.find(function(x){return x.id===a.trackId;}) || {};
+          var r = db.reviewers.find(function(x){return x.id===a.reviewerId;}) || {};
+          return '<tr><td><div style="font-weight:600">'+CMS.esc(p.title||a.paperId)+'</div><div class="muted small">'+CMS.esc(a.paperId)+'</div></td>' +
+            '<td>'+CMS.esc(t.name||"—")+'</td><td>'+CMS.esc((r.firstName||"")+" "+(r.lastName||""))+'</td>' +
+            '<td>'+CMS.fmtDate(a.date)+'</td><td>'+CMS.statusBadge(a.status)+'</td></tr>';
+        }).join("") + '</tbody></table></div>';
+    }
+    renderAssignments();
+
+    c.querySelector("#assign-btn").addEventListener("click", function () {
+      var tid = trackSel.value, pid = paperSel.value, rid = revSel.value;
+      if (!pid) { CMS.toast("No paper selected", "This track has no submitted papers to assign.", "err"); return; }
+      if (!rid) { CMS.toast("No reviewer selected", "Invite reviewers to your team first (Track Team).", "err"); return; }
+      if (db.assignments.some(function(a){ return a.paperId===pid && a.reviewerId===rid; })) {
+        CMS.toast("Already assigned", "This reviewer is already assigned to this paper.", "err"); return;
+      }
+      db.assignments.push({
+        id: CMS.uid("ASG-"), reviewerId: rid, paperId: pid,
+        date: new Date().toISOString().slice(0,10), status: "pending",
+        trackId: tid, assignedBy: lead.name + " (Track Lead)"
+      });
+      var paper = db.papers.find(function(x){return x.id===pid;});
+      if (paper && paper.status === "submitted") paper.status = "assigned";
+      CMS.save(db);
+      renderAssignments();
+      CMS.toast("Reviewer assigned", "Assignment created. The reviewer can now begin the review.");
+    });
+  })();
+  </script>
+</body>
+</html>

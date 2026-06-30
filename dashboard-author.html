@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Author Dashboard · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="dashboard-author">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Author</h1>
+      <p>Browse open Calls for Papers, submit your abstract or paper, and track decisions on your submissions.</p>
+    </div>
+    <div class="grid grid-3" id="stats"></div>
+    <div class="grid grid-2" style="align-items:start">
+      <div class="card">
+        <div class="card-title">Open Calls for Papers</div>
+        <div id="open-cfp"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">My recent submissions</div>
+        <div id="my-subs"></div>
+      </div>
+    </div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    // Dynamic logged-in author email
+    var ME = (CMS.auth.current() || {}).email || "demo@confmanage.org";
+    var mine = db.papers.filter(function (p){ return p.email === ME; });
+    var open = db.conferences.filter(function (cf){ return cf.status === "cfp"; });
+
+    c.querySelector("#stats").innerHTML =
+      '<div class="stat"><div class="n">'+open.length+'</div><div class="l">Open CFPs</div></div>' +
+      '<div class="stat"><div class="n">'+mine.length+'</div><div class="l">My submissions</div></div>' +
+      '<div class="stat"><div class="n">'+mine.filter(function(p){return p.status==="accepted";}).length+'</div><div class="l">Accepted</div></div>';
+
+    c.querySelector("#open-cfp").innerHTML = open.length ? open.map(function (cf) {
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div style="font-weight:600">'+CMS.esc(cf.acronym)+'</div><div class="muted small">'+CMS.esc(cf.name)+'</div><div style="margin-top:8px"><a class="btn btn-subtle btn-sm" href="cfp.html?conf='+cf.id+'">View CFP & Submit</a></div></div>';
+    }).join("") : '<div class="empty" style="padding:24px"><p>No open calls right now.</p></div>';
+
+    c.querySelector("#my-subs").innerHTML = mine.length ? mine.map(function (p) {
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;align-items:center"><div><div style="font-weight:600">'+CMS.esc(p.title)+'</div><div class="muted small">'+CMS.esc(p.id)+' · v'+p.version+'</div></div>'+CMS.statusBadge(p.status)+'</div>';
+    }).join("") + '<div style="margin-top:12px"><a class="btn btn-ghost btn-sm" href="my-submissions.html">Manage submissions →</a></div>'
+      : '<div class="empty" style="padding:24px"><p>No submissions yet.</p><a class="btn btn-primary btn-sm" href="cfp.html">Browse CFPs</a></div>';
+  })();
+  </script>
+</body>
+</html>

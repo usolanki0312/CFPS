@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reviewer Dashboard · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="dashboard-reviewer">
+  <template id="page-content">
+    <div class="page-head">
+      <h1 id="hi">Reviewer</h1>
+      <p id="rev-tracks">Your assigned papers and review activity. Open a paper to record your review.</p>
+    </div>
+    <div class="grid grid-3" id="stats"></div>
+    <div class="card">
+      <div class="head-row" style="margin-bottom:14px">
+        <div class="card-title mb0">Papers assigned to me</div>
+        <a class="btn btn-primary btn-sm" href="review-paper.html">Go to Review Paper</a>
+      </div>
+      <div id="assigned"></div>
+    </div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var me = CMS.currentReviewer(db);
+    if (me) {
+      c.querySelector("#hi").textContent = me.firstName + " " + me.lastName;
+      var myTrackNames = (me.trackIds || []).map(function (id) {
+        var t = db.tracks.find(function (x){ return x.id === id; }); return t ? t.name : id;
+      });
+      if (myTrackNames.length) c.querySelector("#rev-tracks").innerHTML = 'Reviewing for: <strong>' + myTrackNames.map(CMS.esc).join(", ") + '</strong>. Open a paper to record your review.';
+    }
+    var mine = me ? db.assignments.filter(function (a){ return a.reviewerId === me.id; }) : [];
+    var myReviews = me ? db.reviews.filter(function (r){ return r.reviewerId === me.id; }) : [];
+    var pending = mine.filter(function(a){ return !myReviews.some(function(r){ return r.paperId===a.paperId; }); }).length;
+
+    c.querySelector("#stats").innerHTML =
+      '<div class="stat"><div class="n">'+mine.length+'</div><div class="l">Assigned to me</div></div>' +
+      '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending review</div></div>' +
+      '<div class="stat"><div class="n">'+myReviews.length+'</div><div class="l">Reviews submitted</div></div>';
+
+    if (!me) {
+      c.querySelector("#assigned").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>Not set up as a reviewer</h3><p>Accept a reviewer invitation to activate this workspace. Assigned papers will then appear here.</p></div>';
+      return;
+    }
+    if (!mine.length) {
+      c.querySelector("#assigned").innerHTML = '<div class="empty" style="padding:30px"><div class="ico">▤</div><h3>No papers assigned yet</h3><p>A Track Lead will assign papers to you from Review Assignment.</p></div>';
+      return;
+    }
+    c.querySelector("#assigned").innerHTML = mine.map(function (a) {
+      var p = db.papers.find(function(x){return x.id===a.paperId;}) || {};
+      var myRev = myReviews.find(function(r){ return r.paperId===a.paperId; });
+      var right = myRev ? '<span class="score-pill">'+myRev.score+'/10 · '+CMS.esc(myRev.recommendation)+'</span>'
+        : '<a class="btn btn-primary btn-sm" href="review-submit.html?paper='+a.paperId+'">Review</a>';
+      return '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)">' +
+        '<div><div style="font-weight:600">'+CMS.esc(p.title||a.paperId)+'</div><div class="muted small">'+CMS.esc(a.paperId)+'</div></div>'+right+'</div>';
+    }).join("");
+  })();
+  </script>
+</body>
+</html>

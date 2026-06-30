@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceptance Decision · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="acceptance-decision">
+  <template id="page-content">
+    <div class="page-head">
+      <h1>Acceptance Decision</h1>
+      <p>Review the submitted reviews and analysis, then record the final decision. The author is informed of the outcome.</p>
+    </div>
+
+    <div class="card" style="padding:14px 18px">
+      <div class="field" style="max-width:560px"><label>Select paper</label><select id="paper-sel"></select></div>
+    </div>
+
+    <div id="detail"></div>
+  </template>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var sel = c.querySelector("#paper-sel");
+    var lead = CMS.currentLead(db);
+    var myTrackIds = CMS.currentLeadTrackIds(db);
+
+    if (!lead) {
+      c.querySelector("#detail").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>Not set up as a Track Lead</h3><p>Accept a Track Lead invitation to make acceptance decisions for your tracks.</p></div>';
+      sel.closest(".card").style.display = "none";
+      return;
+    }
+
+    // Only papers from this lead's tracks.
+    var myPapers = db.papers.filter(function (p){ return myTrackIds.indexOf(p.trackId) >= 0; });
+    if (!myPapers.length) {
+      c.querySelector("#detail").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>No papers in your tracks</h3><p>Papers submitted to your tracks will appear here for a decision.</p></div>';
+      sel.closest(".card").style.display = "none";
+      return;
+    }
+
+    sel.innerHTML = myPapers.map(function (p) {
+      return '<option value="'+p.id+'">'+CMS.esc(p.id)+' — '+CMS.esc(p.title)+'</option>';
+    }).join("");
+    var pre = CMS.param("paper");
+    if (pre && myPapers.some(function(p){ return p.id===pre; })) sel.value = pre;
+
+    sel.addEventListener("change", render);
+    render();
+
+    function render() {
+      var p = db.papers.find(function(x){ return x.id === sel.value; });
+      var box = c.querySelector("#detail");
+      if (!p) { box.innerHTML = ""; return; }
+      var t = db.tracks.find(function(x){return x.id===p.trackId;}) || {};
+      var conf = db.conferences.find(function(x){return x.id===p.conferenceId;}) || {};
+      var revs = db.reviews.filter(function(r){ return r.paperId===p.id; });
+      var assigned = db.assignments.filter(function(a){ return a.paperId===p.id; }).length;
+      var decided = ["accepted","rejected","revision"].indexOf(p.status)>=0;
+
+      // A decision requires the review process to be complete and analysis available.
+      var hasReviews = revs.length > 0;
+      var avg = hasReviews ? (revs.reduce(function(s,r){ return s+Number(r.score||0); },0)/revs.length).toFixed(1) : "—";
+
+      var precond = hasReviews ? "" :
+        '<div class="notice warn"><span>⚠</span><div>No reviews are available for this paper yet. A decision should be made only after the review process is completed and analysis is available.</div></div>';
+
+      var summary = hasReviews ?
+        '<div class="card"><div class="head-row"><div class="card-title mb0">Review summary</div><div><span class="score-pill">avg '+avg+'/10</span></div></div>' +
+        '<div class="table-wrap" style="box-shadow:none;margin-top:12px"><table><thead><tr><th>Reviewer</th><th>Score</th><th>Recommendation</th><th>Comments</th></tr></thead><tbody>' +
+        revs.map(function(r){
+          var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
+          return '<tr><td>'+CMS.esc((rev.firstName||"")+" "+(rev.lastName||""))+'</td><td><span class="score-pill">'+r.score+'/10</span></td><td>'+CMS.esc(r.recommendation)+'</td><td class="muted small">'+CMS.esc(r.comments)+'</td></tr>';
+        }).join("") + '</tbody></table></div><div class="small muted" style="margin-top:8px">'+revs.length+' of '+(assigned||revs.length)+' reviews received.</div></div>' : "";
+
+      var decidedBanner = decided ?
+        '<div class="notice'+(p.status==="rejected"?" warn":"")+'"><span>'+(p.status==="accepted"?"✓":p.status==="rejected"?"✕":"↻")+'</span><div>Current decision: <strong>'+labelOf(p.status)+'</strong>'+(p.decisionRemarks?(' — '+CMS.esc(p.decisionRemarks)):'')+'. You can change it below.</div></div>' : "";
+
+      // Conflict of interest: a Track Lead cannot decide on their own paper.
+      var coi = CMS.isOwnPaper(p);
+      var decisionCard = coi
+        ? '<div class="notice warn"><span>⚠</span><div><strong>Conflict of interest.</strong> You are an author of this paper, so you cannot record its decision. Another Track Lead must decide it.</div></div>'
+        : '<div class="card"><div class="card-title">Final decision</div>' +
+            '<div class="field" style="margin-bottom:14px"><label>Decision <span class="req">*</span></label>' +
+              '<div class="pill-row" id="dec-pills">' +
+                '<span class="pill" data-v="accepted">Accept</span>' +
+                '<span class="pill" data-v="rejected">Reject</span>' +
+                '<span class="pill" data-v="revision">Revision Required</span>' +
+              '</div></div>' +
+            '<div class="field" style="margin-bottom:14px"><label>Decision Remarks</label><textarea id="remarks" placeholder="Notes communicated to the author">'+CMS.esc(p.decisionRemarks||"")+'</textarea></div>' +
+            '<div class="field" style="margin-bottom:4px;max-width:320px"><label>Track Lead</label><input type="text" value="'+CMS.esc(lead.name)+'" readonly></div>' +
+            '<div class="form-actions"><button class="btn btn-primary" id="save-dec"'+(hasReviews?'':' disabled')+'>Save Decision &amp; Inform Author</button></div></div>';
+
+      box.innerHTML =
+        precond + decidedBanner +
+        '<div class="card"><div class="card-title">Paper</div>' +
+          '<dl class="kv"><dt>Submission ID</dt><dd>'+CMS.esc(p.id)+'</dd>' +
+          '<dt>Title</dt><dd>'+CMS.esc(p.title)+'</dd>' +
+          '<dt>Track</dt><dd>'+CMS.esc(t.name||"—")+'</dd>' +
+          '<dt>Author</dt><dd>'+CMS.esc(p.authorFirst+" "+p.authorLast)+' ('+CMS.esc(p.email)+')</dd>' +
+          '<dt>Conference</dt><dd>'+CMS.esc(conf.acronym||"")+'</dd>' +
+          '<dt>Current status</dt><dd>'+CMS.statusBadge(p.status)+'</dd></dl>' +
+          '<div class="divider"></div><div class="card-title" style="margin-bottom:12px">Process status</div>'+CMS.trackerCompact(p, db)+'</div>' +
+        summary +
+        decisionCard;
+
+      if (coi) return;
+
+      // decision pill selection
+      var chosen = decided ? p.status : "";
+      var pills = box.querySelectorAll("#dec-pills .pill");
+      pills.forEach(function (pill) {
+        if (pill.getAttribute("data-v") === chosen) pill.classList.add("sel");
+        pill.addEventListener("click", function () {
+          pills.forEach(function(x){ x.classList.remove("sel"); });
+          pill.classList.add("sel"); chosen = pill.getAttribute("data-v");
+        });
+      });
+
+      box.querySelector("#save-dec").addEventListener("click", function () {
+        if (!chosen) { CMS.toast("Select a decision", "Choose Accept, Reject, or Revision Required.", "err"); return; }
+        p.status = chosen;
+        p.decisionRemarks = box.querySelector("#remarks").value.trim();
+        CMS.save(db);
+        CMS.toast("Decision saved", "Author informed: " + labelOf(chosen) + " for " + p.id + ".");
+        setTimeout(render, 700);
+      });
+    }
+
+    function labelOf(s){ return s==="accepted"?"Accepted":s==="rejected"?"Rejected":s==="revision"?"Revision Required":s; }
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create Conference · ConfManage</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/theme.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+  <body data-page="create-conference">
+    <template id="page-content">
+      <div class="page-head">
+        <h1>Create Conference</h1>
+        <p>
+          Fill in the conference details. On creation the system assigns a
+          unique identifier and stores the conference as a
+          <strong>Draft</strong>, ready for track configuration.
+        </p>
+      </div>
+
+      <form id="conf-form" novalidate>
+        <div class="card">
+          <div class="card-title">Conference details</div>
+          <div class="form-grid">
+            <div class="field full">
+              <label>Conference Name <span class="req">*</span></label>
+              <input
+                type="text"
+                name="name"
+                placeholder="e.g. International Conference on Applied Computing"
+              />
+              <div class="field-error">
+                Conference name is required and must be unique.
+              </div>
+            </div>
+            <div class="field">
+              <label>Conference Acronym <span class="req">*</span></label>
+              <input type="text" name="acronym" placeholder="e.g. ICAC 2025" />
+              <div class="field-error">Acronym is required.</div>
+            </div>
+            <div class="field">
+              <label>Conference Web Page</label>
+              <input type="url" name="webPage" placeholder="https://" />
+              <div class="field-error"></div>
+            </div>
+            <div class="field">
+              <label>Venue</label>
+              <input type="text" name="venue" placeholder="Venue name" />
+              <div class="field-error"></div>
+            </div>
+            <div class="field">
+              <label>City</label>
+              <input type="text" name="city" placeholder="City" />
+              <div class="field-error"></div>
+            </div>
+            <div class="field full">
+              <label>Region / Country <span class="req">*</span></label>
+              <select name="country"></select>
+              <div class="field-error">Please select a country / region.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Dates &amp; deadlines</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Conference Start Date <span class="req">*</span></label>
+              <input type="date" name="startDate" />
+              <div class="field-error">Start date is required.</div>
+            </div>
+            <div class="field">
+              <label>Conference End Date <span class="req">*</span></label>
+              <input type="date" name="endDate" />
+              <div class="field-error">End date is required.</div>
+            </div>
+            <div class="field">
+              <label>Abstract Registration Deadline</label>
+              <input type="date" name="abstractDeadline" />
+              <div class="field-error"></div>
+            </div>
+            <div class="field">
+              <label>Submission Deadline</label>
+              <input type="date" name="submissionDeadline" />
+              <div class="field-error"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            Create Conference
+          </button>
+          <a class="btn btn-ghost" id="cancel-link" href="onboarding.html"
+            >Cancel</a
+          >
+        </div>
+      </form>
+    </template>
+
+    <script src="assets/app.js"></script>
+    <script>
+      (function () {
+        var db = CMS.load();
+        var c = document.querySelector(".content");
+        var form = c.querySelector("#conf-form");
+
+        // Country / region dropdown (shared list from app.js).
+        form.country.innerHTML =
+          '<option value="">— Select country / region —</option>' +
+          CMS.COUNTRIES.map(function (cn) {
+            return '<option value="' + cn + '">' + cn + "</option>";
+          }).join("");
+
+        // Edit mode = conference Settings (reuse this form). create mode otherwise.
+        var confId = CMS.param("conf");
+        var isEdit = !!CMS.param("edit") && !!confId;
+        var existing = isEdit
+          ? db.conferences.find(function (x) {
+              return x.id === confId;
+            })
+          : null;
+        if (isEdit && !existing) isEdit = false;
+
+        if (isEdit) {
+          document.title = "Conference Settings · ConfManage";
+          c.querySelector(".page-head h1").textContent = "Conference Settings";
+          c.querySelector(".page-head p").innerHTML =
+            "Update the details for <strong>" +
+            CMS.esc(existing.name) +
+            "</strong> (" +
+            CMS.esc(existing.id) +
+            ").";
+          c.querySelector("#submit-btn").textContent = "Save Changes";
+          c.querySelector("#cancel-link").setAttribute(
+            "href",
+            "conference-overview.html?conf=" + confId,
+          );
+          [
+            "name",
+            "acronym",
+            "webPage",
+            "venue",
+            "city",
+            "country",
+            "startDate",
+            "endDate",
+            "abstractDeadline",
+            "submissionDeadline",
+          ].forEach(function (k) {
+            if (form[k] != null && existing[k] != null)
+              form[k].value = existing[k];
+          });
+
+          if (existing.status === "cfp") {
+            var notice = document.createElement("div");
+            notice.className = "notice";
+            notice.style.marginBottom = "20px";
+            notice.innerHTML = '<span>⚠</span><div><strong>Call for Papers is Published.</strong> The conference details are locked and cannot be edited after publication.</div>';
+            form.parentNode.insertBefore(notice, form);
+
+            form.querySelectorAll("input, select, textarea").forEach(function (el) {
+              el.disabled = true;
+            });
+            c.querySelector("#submit-btn").style.display = "none";
+          }
+        }
+
+        function setErr(field, msg) {
+          var f = form
+            .querySelector('[name="' + field + '"]')
+            .closest(".field");
+          f.classList.add("invalid");
+          if (msg) f.querySelector(".field-error").textContent = msg;
+        }
+        function clearErrs() {
+          form.querySelectorAll(".field.invalid").forEach(function (f) {
+            f.classList.remove("invalid");
+          });
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          clearErrs();
+          var d = Object.fromEntries(new FormData(form).entries());
+          var ok = true;
+
+          ["name", "acronym", "country", "startDate", "endDate"].forEach(function (k) {
+            if (!String(d[k] || "").trim()) {
+              setErr(k);
+              ok = false;
+            }
+          });
+          // Precondition: no other conference with the same name (skip self when editing).
+          var dup = db.conferences.some(function (cf) {
+            return (
+              (!isEdit || cf.id !== existing.id) &&
+              cf.name.trim().toLowerCase() ===
+                String(d.name || "")
+                  .trim()
+                  .toLowerCase()
+            );
+          });
+          if (dup) {
+            setErr("name", "A conference with this name already exists.");
+            ok = false;
+          }
+
+          if (!ok) {
+            CMS.toast(
+              "Please fix the highlighted fields",
+              "Required details are missing or invalid.",
+              "err",
+            );
+            return;
+          }
+
+          if (isEdit) {
+            existing.name = d.name.trim();
+            existing.acronym = d.acronym.trim();
+            existing.webPage = d.webPage || "";
+            existing.venue = d.venue || "";
+            existing.city = d.city || "";
+            existing.country = d.country || "";
+            existing.startDate = d.startDate;
+            existing.endDate = d.endDate;
+            existing.abstractDeadline = d.abstractDeadline || "";
+            existing.submissionDeadline = d.submissionDeadline || "";
+            CMS.save(db);
+            CMS.toast("Conference updated", "Changes saved.");
+            setTimeout(function () {
+              location.href = "conference-overview.html?conf=" + existing.id;
+            }, 800);
+            return;
+          }
+
+          // Create: system-assigned unique identifier
+          var seq = String(db.conferences.length + 1).padStart(3, "0");
+          var id = "CONF-2025-" + seq;
+
+          db.conferences.push({
+            id: id,
+            name: d.name.trim(),
+            acronym: d.acronym.trim(),
+            webPage: d.webPage || "",
+            venue: d.venue || "",
+            city: d.city || "",
+            country: d.country || "",
+            startDate: d.startDate,
+            endDate: d.endDate,
+            abstractDeadline: d.abstractDeadline || "",
+            submissionDeadline: d.submissionDeadline || "",
+            status: "draft",
+            cfpContent: "",
+            createdBy: "Conference Admin",
+          });
+          CMS.save(db);
+          CMS.logActivity("create_conference", d.name.trim(), id);
+          // Acquire the Conference Admin workspace and enter the created conference.
+          CMS.auth.grantRole("admin");
+          CMS.setConf(id);
+          CMS.setWorkspace("admin");
+          CMS.toast(
+            "Conference created",
+            "Conference Admin workspace activated.",
+          );
+          setTimeout(function () {
+            location.href = "conference-overview.html?conf=" + id;
+          }, 900);
+        });
+      })();
+    </script>
+  </body>
+</html>

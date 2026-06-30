@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Submission · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body data-page="submission-detail">
+  <template id="page-content">
+    <div class="page-head head-row">
+      <div>
+        <h1 id="title">Submission</h1>
+        <p id="sub">Track this submission’s progress, read reviewer feedback, and rewrite / resubmit.</p>
+      </div>
+      <a class="btn btn-ghost" href="my-submissions.html">← All submissions</a>
+    </div>
+    <div id="wrap"></div>
+  </template>
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var db = CMS.load();
+    var c = document.querySelector(".content");
+    var id = CMS.param("id");
+    var p = db.papers.find(function (x){ return x.id === id; });
+
+    if (!p) {
+      c.querySelector("#wrap").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>Submission not found</h3><a class="btn btn-primary" href="my-submissions.html">Back to submissions</a></div>';
+      return;
+    }
+    render();
+
+    function render() {
+      var conf = db.conferences.find(function(x){return x.id===p.conferenceId;}) || {};
+      var track = db.tracks.find(function(t){return t.id===p.trackId;}) || {};
+      var reviews = db.reviews.filter(function(r){ return r.paperId === p.id; });
+      var pastDeadline = conf.submissionDeadline && (new Date(conf.submissionDeadline) < new Date());
+      var decided = ["accepted","rejected","revision"].indexOf(p.status) >= 0;
+
+      c.querySelector("#title").innerHTML = CMS.esc(p.title) + " " + CMS.statusBadge(p.status);
+      c.querySelector("#sub").innerHTML = CMS.esc(p.id)+' · v'+p.version+' · '+CMS.esc(conf.acronym||"")+' · Track: '+CMS.esc(track.name||"—");
+
+      var decisionHtml = decided
+        ? '<div class="notice'+(p.status==="rejected"?" warn":"")+'"><span>'+(p.status==="accepted"?"✓":p.status==="rejected"?"✕":"↻")+'</span><div><strong>Decision: '+labelOf(p.status)+'</strong>'+(p.decisionRemarks?('<br><span class="small">'+CMS.esc(p.decisionRemarks)+'</span>'):'')+'</div></div>'
+        : '';
+
+      var feedbackHtml = reviews.length
+        ? '<div class="card"><div class="card-title">Reviewer feedback &amp; scores</div>' + reviews.map(function(r){
+            var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
+            return '<div style="border:1px solid var(--border);border-radius:10px;padding:13px 15px;margin-bottom:10px">' +
+              '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="score-pill">Score '+r.score+'/10</span>'+
+                '<span class="muted small">'+CMS.esc(r.recommendation)+'</span><span class="muted small" style="margin-left:auto">'+CMS.esc((rev.firstName||"Reviewer")+" "+(rev.lastName||""))+'</span></div>' +
+              '<div class="small" style="margin-top:8px;color:#38414f">'+CMS.esc(r.comments)+'</div></div>';
+          }).join("") + '</div>'
+        : '<div class="card"><div class="card-title">Reviewer feedback</div><p class="muted small mb0">No reviews available yet.</p></div>';
+
+      var resubmit;
+      if (pastDeadline) {
+        resubmit = '<div class="card"><div class="card-title">Rewrite &amp; resubmit</div>' +
+          '<div class="notice warn" style="margin-bottom:0"><span>⚠</span><div>The submission deadline ('+CMS.fmtDate(conf.submissionDeadline)+') has passed — this submission can no longer be updated.</div></div></div>';
+      } else {
+        resubmit = '<form id="rs-form" class="card"><div class="card-title">Rewrite &amp; resubmit</div>' +
+          '<div class="notice" style="margin-bottom:16px"><span>ℹ</span><div>Current version <strong>v'+p.version+'</strong>. Saving creates <strong>v'+(p.version+1)+'</strong>. Deadline: '+CMS.fmtDate(conf.submissionDeadline)+'.</div></div>' +
+          '<div class="form-grid">' +
+            '<div class="field full"><label>Paper — Title</label><input type="text" id="f-title" value="'+CMS.esc(p.title)+'"></div>' +
+            '<div class="field full"><label>Paper — Abstract</label><textarea id="f-abstract" style="min-height:130px">'+CMS.esc(p.abstract)+'</textarea></div>' +
+            '<div class="field full"><label>Keywords</label><input type="text" id="f-keywords" value="'+CMS.esc(p.keywords)+'"></div>' +
+            '<div class="field full"><label>Upload revised paper (PDF)</label><input type="file" id="pdf" accept="application/pdf" style="display:none"><div class="file-drop" id="drop">Current file: '+CMS.esc(p.fileName)+'<div class="fn" id="fn"></div></div></div>' +
+          '</div>' +
+          '<div class="form-actions"><button type="submit" class="btn btn-primary">Resubmit submission</button></div></form>';
+      }
+
+      c.querySelector("#wrap").innerHTML =
+        decisionHtml +
+        '<div class="card"><div class="card-title">Activity workflow</div>' + CMS.trackerTimeline(p, db) + '</div>' +
+        feedbackHtml +
+        resubmit;
+
+      if (pastDeadline) return;
+
+      var form = c.querySelector("#rs-form");
+      var newFile = "";
+      var drop = c.querySelector("#drop"), pdf = c.querySelector("#pdf"), fn = c.querySelector("#fn");
+      drop.addEventListener("click", function(){ pdf.click(); });
+      pdf.addEventListener("change", function(){ if (pdf.files[0]) { newFile = pdf.files[0].name; fn.textContent = "✓ New file: " + newFile; } });
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        p.title = c.querySelector("#f-title").value.trim() || p.title;
+        p.abstract = c.querySelector("#f-abstract").value.trim();
+        p.keywords = c.querySelector("#f-keywords").value;
+        if (newFile) p.fileName = newFile;
+        p.version = p.version + 1;
+        p.submissionDate = new Date().toISOString().slice(0,10);
+        if (p.status === "revision") p.status = "submitted"; // re-enters the review pipeline
+
+        if (!db.paperVersions) db.paperVersions = [];
+        db.paperVersions.push({
+          paperId: p.id,
+          version: p.version,
+          title: p.title,
+          abstract: p.abstract,
+          keywords: p.keywords,
+          fileName: p.fileName,
+          date: p.submissionDate
+        });
+
+        CMS.save(db);
+        CMS.logActivity("update_paper", p.title, p.id);
+        CMS.toast("Submission resubmitted", p.id + " saved as v" + p.version + ".");
+        setTimeout(render, 700);
+      });
+    }
+
+    function labelOf(s){ return s==="accepted"?"Accepted":s==="rejected"?"Rejected":s==="revision"?"Revision Required":s; }
+  })();
+  </script>
+</body>
+</html>

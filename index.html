@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · ConfManage</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="auth-wrap">
+    <form class="auth-card" id="login-form" novalidate>
+      <div class="auth-brand"><span class="logo">CM</span> ConfManage</div>
+      <h1 class="auth-title">Sign in</h1>
+      <p class="auth-sub">Welcome back. Enter your details to continue.</p>
+
+      <div class="field" style="margin-bottom:16px">
+        <label>Email</label>
+        <input type="email" name="email" placeholder="you@example.com" autocomplete="email">
+        <div class="field-error">Enter a valid email address.</div>
+      </div>
+
+      <div class="field" style="margin-bottom:2px">
+        <label>Password</label>
+        <div class="pw-wrap">
+          <input type="password" name="password" placeholder="Your password" autocomplete="current-password">
+          <button type="button" class="pw-toggle">Show</button>
+        </div>
+        <div class="field-error">Password is required.</div>
+      </div>
+
+      <div class="auth-row">
+        <label><input type="checkbox" id="remember"> Remember me</label>
+        <a href="#" id="forgot">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Sign in</button>
+
+      <div class="auth-demo">Demo login — <strong>demo@confmanage.org</strong> / <strong>demo1234</strong></div>
+      <div class="auth-divider"></div>
+      <div class="auth-foot">Don’t have an account? <a href="signup.html">Sign up</a></div>
+    </form>
+  </div>
+  <div class="toast-wrap" id="toast-wrap"></div>
+
+  <script src="assets/app.js"></script>
+  <script>
+  (function () {
+    var auth = CMS.auth.load();
+    var form = document.getElementById("login-form");
+
+    // Prefill a remembered email.
+    if (auth.rememberedEmail) { form.email.value = auth.rememberedEmail; document.getElementById("remember").checked = true; }
+
+    document.getElementById("forgot").addEventListener("click", function (e) {
+      e.preventDefault(); // placeholder link — no screen for now
+    });
+
+    // Show / hide password
+    document.querySelectorAll(".pw-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var inp = btn.closest(".pw-wrap").querySelector("input");
+        var show = inp.type === "password";
+        inp.type = show ? "text" : "password";
+        btn.textContent = show ? "Hide" : "Show";
+      });
+    });
+
+    function setErr(name, on) {
+      form.querySelector('[name="'+name+'"]').closest(".field").classList.toggle("invalid", on);
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var email = form.email.value.trim(), pw = form.password.value;
+      var ok = true;
+      if (!/^\S+@\S+\.\S+$/.test(email)) { setErr("email", true); ok = false; } else setErr("email", false);
+      if (!pw) { setErr("password", true); ok = false; } else setErr("password", false);
+      if (!ok) return;
+
+      if (CMS.auth.login(email, pw, document.getElementById("remember").checked)) {
+        location.href = CMS.auth.landingHref();
+      } else {
+        CMS.toast("Sign in failed", "Email or password is incorrect.", "err");
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
