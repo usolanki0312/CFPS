@@ -651,7 +651,7 @@ td .muted {
 .toast-wrap {
   position: fixed;
   right: 22px;
-  bottom: 22px;
+  bottom: 72px; /* clear the floating demo account switcher (bottom-right) */
   z-index: 100;
   display: flex;
   flex-direction: column;

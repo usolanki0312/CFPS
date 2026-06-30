@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="assets/styles.css">
   <link rel="stylesheet" href="assets/theme.css">
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body data-page="dashboard-reviewer">
   <template id="page-content">
@@ -18,7 +19,15 @@
     <div class="card">
       <div class="head-row" style="margin-bottom:14px">
         <div class="card-title mb0">Papers assigned to me</div>
-        <a class="btn btn-primary btn-sm" href="review-paper.html">Go to Review Paper</a>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div id="tools" style="display:none;align-items:center;gap:10px">
+            <label class="muted small" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="dl-all"> Select all</label>
+            <span class="muted small" id="selcount">0 selected</span>
+            <button class="btn btn-subtle btn-sm" id="dl-zip" disabled>⬇ Attachments (ZIP)</button>
+            <button class="btn btn-subtle btn-sm" id="dl-csv" disabled>⬇ Excel (CSV)</button>
+          </div>
+          <a class="btn btn-primary btn-sm" href="review-paper.html">Go to Review Paper</a>
+        </div>
       </div>
       <div id="assigned"></div>
     </div>
@@ -59,8 +68,50 @@
       var right = myRev ? '<span class="score-pill">'+myRev.score+'/10 · '+CMS.esc(myRev.recommendation)+'</span>'
         : '<a class="btn btn-primary btn-sm" href="review-submit.html?paper='+a.paperId+'">Review</a>';
       return '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)">' +
-        '<div><div style="font-weight:600">'+CMS.esc(p.title||a.paperId)+'</div><div class="muted small">'+CMS.esc(a.paperId)+'</div></div>'+right+'</div>';
+        '<div style="display:flex;align-items:center;gap:12px"><input type="checkbox" class="dl-cb" data-id="'+CMS.esc(a.paperId)+'" aria-label="Select paper"><div><div style="font-weight:600">'+CMS.esc(p.title||a.paperId)+'</div><div class="muted small">'+CMS.esc(a.paperId)+'</div></div></div>'+right+'</div>';
     }).join("");
+
+    // ----- Bulk download: select assigned papers, then download attachments (ZIP) or Excel (CSV) -----
+    var assignedBox = c.querySelector("#assigned");
+    var tools = c.querySelector("#tools");
+    var allCb = c.querySelector("#dl-all");
+    var zipBtn = c.querySelector("#dl-zip");
+    var csvBtn = c.querySelector("#dl-csv");
+    var countEl = c.querySelector("#selcount");
+    var stamp = new Date().toISOString().slice(0, 10);
+    tools.style.display = "flex";
+
+    function boxes() { return Array.prototype.slice.call(assignedBox.querySelectorAll(".dl-cb")); }
+    function selectedPapers() {
+      var ids = {};
+      boxes().forEach(function (cb) { if (cb.checked) ids[cb.getAttribute("data-id")] = true; });
+      return mine.filter(function (a) { return ids[a.paperId]; })
+        .map(function (a) { return db.papers.find(function (p) { return p.id === a.paperId; }); })
+        .filter(Boolean);
+    }
+    function refresh() {
+      var n = selectedPapers().length;
+      countEl.textContent = n + " selected";
+      zipBtn.disabled = csvBtn.disabled = n === 0;
+      var bs = boxes();
+      allCb.checked = bs.length > 0 && bs.every(function (cb) { return cb.checked; });
+    }
+    allCb.addEventListener("change", function () {
+      boxes().forEach(function (cb) { cb.checked = allCb.checked; });
+      refresh();
+    });
+    assignedBox.addEventListener("change", function (e) {
+      if (e.target && e.target.classList.contains("dl-cb")) refresh();
+    });
+    zipBtn.addEventListener("click", function () {
+      var sel = selectedPapers();
+      if (sel.length) CMS.downloadPapersZip(sel, db, "my-assigned-papers-" + stamp + ".zip");
+    });
+    csvBtn.addEventListener("click", function () {
+      var sel = selectedPapers();
+      if (sel.length) CMS.downloadPapersCsv(sel, db, "my-assigned-papers-" + stamp + ".csv");
+    });
+    refresh();
   })();
   </script>
 </body>

@@ -58,11 +58,22 @@
               '<span class="pill" data-v="Reject">Reject</span>' +
             '</div></div>' +
           '<div class="field full"><label>Comments <span class="req">*</span></label><textarea id="comments" style="min-height:140px" placeholder="Strengths, weaknesses, and suggestions for the author">'+(existing?CMS.esc(existing.comments):'')+'</textarea><div class="field-error">Please add review comments.</div></div>' +
+          '<div class="field full"><label>Attach commented / updated file (optional)</label>' +
+            '<input type="file" id="rev-file" style="display:none">' +
+            '<div class="file-drop" id="rev-drop">Click to choose a file (annotated PDF, notes, etc.)<div class="fn" id="rev-fn">'+(existing&&existing.attachmentName?'✓ '+CMS.esc(existing.attachmentName):'')+'</div></div>' +
+            '<div class="muted small" style="margin-top:6px">Prototype: only the file name is recorded.</div></div>' +
         '</div>' +
         '<div class="form-actions"><button type="submit" class="btn btn-primary">'+(existing?'Update Review':'Submit Review')+'</button>' +
           '<a class="btn btn-ghost" href="review-paper.html">Cancel</a></div></form>';
 
     var form = c.querySelector("#rev-form");
+    // Optional attachment — prototype records the file name only (no upload of bytes).
+    var attachName = existing && existing.attachmentName ? existing.attachmentName : "";
+    var revFile = form.querySelector("#rev-file"), revDrop = form.querySelector("#rev-drop"), revFn = form.querySelector("#rev-fn");
+    revDrop.addEventListener("click", function () { revFile.click(); });
+    revFile.addEventListener("change", function () {
+      if (revFile.files[0]) { attachName = revFile.files[0].name; revFn.textContent = "✓ " + attachName; }
+    });
     var chosen = existing ? existing.recommendation : "";
     var pills = form.querySelectorAll("#rec-pills .pill");
     pills.forEach(function (pill) {
@@ -87,10 +98,12 @@
 
       if (existing) {
         existing.score = score; existing.comments = commentsEl.value.trim();
-        existing.recommendation = chosen; existing.submittedAt = new Date().toISOString().slice(0,10);
+        existing.recommendation = chosen; existing.attachmentName = attachName;
+        existing.submittedAt = new Date().toISOString().slice(0,10);
       } else {
         db.reviews.push({ id: CMS.uid("RV-"), paperId: pid, reviewerId: me.id,
           score: score, recommendation: chosen, comments: commentsEl.value.trim(),
+          attachmentName: attachName,
           submittedAt: new Date().toISOString().slice(0,10) });
       }
       // Mark this reviewer's assignment as completed.

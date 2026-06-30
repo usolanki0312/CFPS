@@ -48,10 +48,11 @@
 
       var rows = revs.map(function (r) {
         var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
+        var attach = r.attachmentName ? '<div class="muted small" style="margin-top:6px"><span title="Attachment (prototype: name only)">📎 '+CMS.esc(r.attachmentName)+'</span></div>' : '';
         return '<tr><td>'+CMS.esc((rev.firstName||"Reviewer")+" "+(rev.lastName||""))+'</td>' +
           '<td><span class="score-pill">'+r.score+'/10</span></td>' +
           '<td>'+CMS.esc(r.recommendation)+'</td>' +
-          '<td class="muted small">'+CMS.esc(r.comments)+'</td></tr>';
+          '<td class="muted small">'+CMS.esc(r.comments)+attach+'</td></tr>';
       }).join("");
 
       return '<div class="card">' +

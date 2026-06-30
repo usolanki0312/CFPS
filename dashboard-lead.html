@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="assets/styles.css">
   <link rel="stylesheet" href="assets/theme.css">
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body data-page="dashboard-lead">
   <template id="page-content">
@@ -16,7 +17,14 @@
     </div>
     <div class="grid grid-3" id="stats"></div>
     <div class="card">
-      <div class="card-title">Papers in your tracks</div>
+      <div class="head-row" style="margin-bottom:14px">
+        <div class="card-title mb0">Papers in your tracks</div>
+        <div id="tools" style="display:none;align-items:center;gap:10px">
+          <span class="muted small" id="selcount">0 selected</span>
+          <button class="btn btn-subtle btn-sm" id="dl-zip" disabled>⬇ Attachments (ZIP)</button>
+          <button class="btn btn-subtle btn-sm" id="dl-csv" disabled>⬇ Excel (CSV)</button>
+        </div>
+      </div>
       <div id="papers"></div>
     </div>
   </template>
@@ -49,15 +57,56 @@
       return;
     }
 
-    c.querySelector("#papers").innerHTML = '<div class="table-wrap"><table><thead><tr><th>Paper</th><th>Track</th><th>Reviewers</th><th>Status</th><th class="text-right">Manage</th></tr></thead><tbody>' +
+    c.querySelector("#papers").innerHTML = '<div class="table-wrap"><table><thead><tr><th style="width:34px"><input type="checkbox" id="dl-all" aria-label="Select all"></th><th>Paper</th><th>Track</th><th>Reviewers</th><th>Status</th><th class="text-right">Manage</th></tr></thead><tbody>' +
       papers.map(function (p) {
         var t = db.tracks.find(function(x){return x.id===p.trackId;}) || {};
         var asg = db.assignments.filter(function(a){ return a.paperId===p.id; }).length;
         var own = CMS.isOwnPaper(p);
-        return '<tr><td><div style="font-weight:600">'+CMS.esc(p.title)+'</div><div class="muted small">'+CMS.esc(p.id)+(own?' · <span class="badge rejected">Your paper</span>':'')+'</div></td>' +
+        return '<tr><td><input type="checkbox" class="dl-cb" data-id="'+CMS.esc(p.id)+'" aria-label="Select paper"></td>' +
+          '<td><div style="font-weight:600">'+CMS.esc(p.title)+'</div><div class="muted small">'+CMS.esc(p.id)+(own?' · <span class="badge rejected">Your paper</span>':'')+'</div></td>' +
           '<td>'+CMS.esc(t.name||"—")+'</td><td>'+asg+'</td><td>'+CMS.statusBadge(p.status)+'</td>' +
           '<td class="text-right t-actions"><a class="btn btn-ghost btn-sm" href="review-assignment.html">Assign</a><a class="btn btn-ghost btn-sm" href="acceptance-decision.html">Decide</a></td></tr>';
       }).join("") + '</tbody></table></div>';
+
+    // ----- Bulk download: select papers, then download attachments (ZIP) or Excel (CSV) -----
+    var papersBox = c.querySelector("#papers");
+    var tools = c.querySelector("#tools");
+    var allCb = c.querySelector("#dl-all");
+    var zipBtn = c.querySelector("#dl-zip");
+    var csvBtn = c.querySelector("#dl-csv");
+    var countEl = c.querySelector("#selcount");
+    var stamp = new Date().toISOString().slice(0, 10);
+    tools.style.display = "flex";
+
+    function boxes() { return Array.prototype.slice.call(papersBox.querySelectorAll(".dl-cb")); }
+    function selectedPapers() {
+      var ids = {};
+      boxes().forEach(function (cb) { if (cb.checked) ids[cb.getAttribute("data-id")] = true; });
+      return papers.filter(function (p) { return ids[p.id]; });
+    }
+    function refresh() {
+      var n = selectedPapers().length;
+      countEl.textContent = n + " selected";
+      zipBtn.disabled = csvBtn.disabled = n === 0;
+      var bs = boxes();
+      allCb.checked = bs.length > 0 && bs.every(function (cb) { return cb.checked; });
+    }
+    allCb.addEventListener("change", function () {
+      boxes().forEach(function (cb) { cb.checked = allCb.checked; });
+      refresh();
+    });
+    papersBox.addEventListener("change", function (e) {
+      if (e.target && e.target.classList.contains("dl-cb")) refresh();
+    });
+    zipBtn.addEventListener("click", function () {
+      var sel = selectedPapers();
+      if (sel.length) CMS.downloadPapersZip(sel, db, "submissions-" + stamp + ".zip");
+    });
+    csvBtn.addEventListener("click", function () {
+      var sel = selectedPapers();
+      if (sel.length) CMS.downloadPapersCsv(sel, db, "papers-mytracks-" + stamp + ".csv");
+    });
+    refresh();
   })();
   </script>
 </body>

@@ -276,6 +276,26 @@
     a.rememberedEmail = ""; // logging out forgets the prefilled email
     saveAuth(a);
   }
+  // DEMO ONLY: switch the active session to an existing account without a
+  // password. Powers the floating demo account switcher so a complete,
+  // multi-person flow (Admin/Author + Track Lead/Reviewer) can be shown on one
+  // browser. Not a real auth path — real login still goes through authLogin().
+  function authSwitchTo(email) {
+    var a = loadAuth();
+    var acc = a.accounts.find(function (x) {
+      return x.email.toLowerCase() === String(email || "").toLowerCase();
+    });
+    if (!acc) return false;
+    a.session = {
+      email: acc.email,
+      name: acc.firstName + " " + acc.lastName,
+      remember: true,
+      at: Date.now(),
+    };
+    a.rememberedEmail = acc.email;
+    saveAuth(a);
+    return true;
+  }
 
   /* ---------- Workspaces / acquired roles ---------- */
   function getWorkspace() {
@@ -383,7 +403,7 @@
           status: "cfp", // draft | configured | cfp
           cfpContent:
             "ICAC 2025 invites original research contributions in applied computing. Papers must be original, unpublished, and not under review elsewhere. Submissions are double-blind and limited to 8 pages in the conference template. Please select the most relevant track on submission.",
-          createdBy: "Conference Admin",
+          createdBy: "demo@confmanage.org",
         },
         {
           id: "CONF-2025-002",
@@ -399,7 +419,7 @@
           submissionDeadline: "2025-10-05",
           status: "draft",
           cfpContent: "",
-          createdBy: "Conference Admin",
+          createdBy: "demo@confmanage.org",
         },
       ],
       trackLeads: [
@@ -648,6 +668,16 @@
       if (!d.invitations) { d.invitations = seedInvitations(); changed = true; }
       if (!d.activities) { d.activities = []; changed = true; }
       if (!d.paperVersions) { d.paperVersions = []; changed = true; }
+      // Conferences are now owned by an account email. Re-attribute legacy seed
+      // data (created before ownership scoping) to the demo account.
+      if (Array.isArray(d.conferences)) {
+        d.conferences.forEach(function (cf) {
+          if (cf.createdBy === "Conference Admin") {
+            cf.createdBy = "demo@confmanage.org";
+            changed = true;
+          }
+        });
+      }
       if (changed) localStorage.setItem(STORE_KEY, JSON.stringify(d));
       return d;
     } catch (e) {
@@ -829,6 +859,10 @@
     // Single active conference for admin scoping.
     var confId = param("conf") || getConf();
     if (param("conf")) setConf(param("conf"));
+    // The "My CFP" list is where a conference is chosen, not worked in — don't
+    // carry a previously-opened conference into context here, so the conference
+    // tools (Overview, Tracks, CFP, …) stay hidden until one is opened.
+    if (page === "conferences") confId = "";
     var confName = "";
     if (ws === "admin" && confId) {
       var cf = load().conferences.find(function (x) {
@@ -1355,6 +1389,176 @@
   }
 
   /* ---------- Public API ---------- */
+  /* ============================================================
+     DOWNLOAD / EXPORT  (client-side only)
+     Bulk attachment + spreadsheet export for Track Lead / Reviewer.
+     - CSV: dependency-free, opens in Excel/Sheets.
+     - Attachment: the prototype stores only the file *name*, never the bytes,
+       so we generate a small, valid placeholder PDF from the paper's metadata.
+     - ZIP: via JSZip when present, else falls back to individual downloads.
+     ============================================================ */
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "download";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
+  function sanitizeFileName(s) {
+    return (
+      String(s || "")
+        .replace(/[\\/:*?"<>|]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) || "file"
+    );
+  }
+
+  function paperPdfName(p) {
+    var name = ((p.authorFirst || "") + " " + (p.authorLast || "")).trim();
+    return sanitizeFileName(name + " " + (p.title || p.id || "paper")) + ".pdf";
+  }
+
+  // ---- CSV ----
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    if (/[",\n\r]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+  function papersToCsv(papers, db) {
+    db = db || load();
+    var cols = ["Paper ID", "Title", "Submitter", "Email", "Affiliation", "Country",
+      "Track", "Keywords", "Abstract", "Submission Date", "Status", "Version", "File Name"];
+    var rows = [cols.map(csvCell).join(",")];
+    (papers || []).forEach(function (p) {
+      var t = (db.tracks || []).find(function (x) { return x.id === p.trackId; }) || {};
+      rows.push([
+        p.id, p.title, ((p.authorFirst || "") + " " + (p.authorLast || "")).trim(),
+        p.email, p.affiliation, p.country, t.name || p.trackId || "",
+        p.keywords, p.abstract, p.submissionDate, p.status, p.version, p.fileName,
+      ].map(csvCell).join(","));
+    });
+    return rows.join("\r\n");
+  }
+  function downloadPapersCsv(papers, db, filename) {
+    // BOM so Excel reads UTF-8 correctly.
+    var csv = "﻿" + papersToCsv(papers, db);
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename || "papers.csv");
+  }
+
+  // ---- Placeholder PDF (minimal, valid single-page document) ----
+  function pdfEscape(s) {
+    return String(s == null ? "" : s)
+      .replace(/[\r\n]+/g, " ")
+      .replace(/[^\x20-\x7E]/g, "?") // keep ASCII so string length == byte length
+      .replace(/\\/g, "\\\\")
+      .replace(/\(/g, "\\(")
+      .replace(/\)/g, "\\)");
+  }
+  function pdfWrap(s, max) {
+    s = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+    if (!s) return [""];
+    var words = s.split(" "), lines = [], cur = "";
+    words.forEach(function (w) {
+      if (!cur) cur = w;
+      else if ((cur + " " + w).length <= max) cur += " " + w;
+      else { lines.push(cur); cur = w; }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function pad10(n) {
+    var s = String(n);
+    while (s.length < 10) s = "0" + s;
+    return s;
+  }
+  function buildPaperPdfString(paper, db) {
+    db = db || load();
+    var t = (db.tracks || []).find(function (x) { return x.id === paper.trackId; }) || {};
+    var name = ((paper.authorFirst || "") + " " + (paper.authorLast || "")).trim();
+    var lines = [];
+    pdfWrap(paper.title || "Untitled", 80).forEach(function (l) { lines.push(l); });
+    lines.push("");
+    lines.push("Paper ID: " + (paper.id || ""));
+    lines.push("Author: " + name);
+    lines.push("Email: " + (paper.email || ""));
+    lines.push("Affiliation: " + (paper.affiliation || ""));
+    lines.push("Country: " + (paper.country || ""));
+    lines.push("Track: " + (t.name || paper.trackId || ""));
+    lines.push("Submission Date: " + (paper.submissionDate || ""));
+    lines.push("Status: " + (paper.status || ""));
+    lines.push("Version: " + (paper.version || 1));
+    lines.push("Keywords: " + (paper.keywords || ""));
+    lines.push("Original file: " + (paper.fileName || ""));
+    lines.push("");
+    lines.push("Abstract:");
+    pdfWrap(paper.abstract || "", 90).forEach(function (l) { lines.push(l); });
+    lines.push("");
+    lines.push("---");
+    lines.push("Prototype placeholder - the original uploaded file is not stored.");
+
+    var ops = "BT\n/F1 12 Tf\n50 760 Td\n15 TL\n";
+    lines.forEach(function (l) { ops += "(" + pdfEscape(l) + ") Tj T*\n"; });
+    ops += "ET";
+
+    var objs = [
+      "<</Type/Catalog/Pages 2 0 R>>",
+      "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+      "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
+      "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+      "<</Length " + ops.length + ">>\nstream\n" + ops + "\nendstream",
+    ];
+    var header = "%PDF-1.4\n";
+    var body = "", offsets = [], pos = header.length;
+    objs.forEach(function (o, i) {
+      offsets.push(pos);
+      var obj = (i + 1) + " 0 obj\n" + o + "\nendobj\n";
+      body += obj;
+      pos += obj.length;
+    });
+    var xrefPos = header.length + body.length;
+    var xref = "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n";
+    offsets.forEach(function (off) { xref += pad10(off) + " 00000 n \n"; });
+    var trailer = "trailer\n<</Size " + (objs.length + 1) +
+      "/Root 1 0 R>>\nstartxref\n" + xrefPos + "\n%%EOF";
+    return header + body + xref + trailer;
+  }
+  function buildPaperPdfBlob(paper, db) {
+    return new Blob([buildPaperPdfString(paper, db)], { type: "application/pdf" });
+  }
+
+  // ---- ZIP of attachments (JSZip if available, else individual downloads) ----
+  function uniqueName(used, base) {
+    if (!used[base]) { used[base] = 1; return base; }
+    var n = used[base]++;
+    return base.replace(/\.pdf$/i, "") + " (" + n + ").pdf";
+  }
+  function downloadPapersZip(papers, db, zipName) {
+    db = db || load();
+    papers = papers || [];
+    if (!papers.length) return;
+    if (window.JSZip) {
+      var zip = new JSZip(), used = {};
+      papers.forEach(function (p) {
+        zip.file(uniqueName(used, paperPdfName(p)), buildPaperPdfString(p, db));
+      });
+      zip.generateAsync({ type: "blob" }).then(function (blob) {
+        downloadBlob(blob, zipName || "submissions.zip");
+      });
+    } else {
+      // Fallback: stagger individual downloads so the browser doesn't drop them.
+      papers.forEach(function (p, i) {
+        setTimeout(function () {
+          downloadBlob(buildPaperPdfBlob(p, db), paperPdfName(p));
+        }, i * 350);
+      });
+    }
+  }
+
   window.CMS = {
     load: load,
     save: save,
@@ -1376,6 +1580,7 @@
       login: authLogin,
       logout: authLogout,
       current: authCurrent,
+      switchTo: authSwitchTo,
       emailExists: authEmailExists,
       roles: authRoles,
       hasRole: authHasRole,
@@ -1391,6 +1596,13 @@
     currentLead: currentLead,
     currentLeadTrackIds: currentLeadTrackIds,
     isOwnPaper: isOwnPaper,
+    downloadBlob: downloadBlob,
+    sanitizeFileName: sanitizeFileName,
+    paperPdfName: paperPdfName,
+    papersToCsv: papersToCsv,
+    downloadPapersCsv: downloadPapersCsv,
+    buildPaperPdfBlob: buildPaperPdfBlob,
+    downloadPapersZip: downloadPapersZip,
     WORKSPACES: WORKSPACES,
     COUNTRIES: COUNTRIES,
     statusBadge: statusBadge,
@@ -1427,8 +1639,128 @@
     });
   }
 
+  /* ============================================================
+     DEMO ACCOUNT SWITCHER  (prototype convenience, not production)
+     A floating widget to hop between saved accounts without a password,
+     so one browser can act out the full multi-person flow
+     (Admin/Author <-> Track Lead/Reviewer) during a live demo.
+     ============================================================ */
+  var ROLE_SHORT = {
+    admin: "Admin",
+    author: "Author",
+    lead: "Track Lead",
+    reviewer: "Reviewer",
+  };
+
+  function devSwitcherStyles() {
+    if (document.getElementById("cmsdev-style")) return;
+    var s = document.createElement("style");
+    s.id = "cmsdev-style";
+    s.textContent =
+      ".cmsdev{position:fixed;right:16px;bottom:16px;z-index:9999;font-family:inherit}" +
+      ".cmsdev *{box-sizing:border-box}" +
+      ".cmsdev-btn{display:inline-flex;align-items:center;gap:8px;background:#1e1b4b;color:#fff;border:1px solid #4338ca;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25)}" +
+      ".cmsdev-btn:hover{background:#312e81}" +
+      ".cmsdev-dot{width:7px;height:7px;border-radius:50%;background:#34d399}" +
+      ".cmsdev-panel{position:absolute;right:0;bottom:48px;width:300px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.22);overflow:hidden;display:none}" +
+      ".cmsdev.open .cmsdev-panel{display:block}" +
+      ".cmsdev-hd{padding:11px 14px;background:#1e1b4b;color:#fff;font-size:12px;font-weight:700;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:center}" +
+      ".cmsdev-hd small{font-weight:500;opacity:.7}" +
+      ".cmsdev-list{max-height:300px;overflow:auto}" +
+      ".cmsdev-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;text-align:left;width:100%;background:#fff;border-left:0;border-right:0;border-top:0}" +
+      ".cmsdev-row:hover{background:#f8fafc}" +
+      ".cmsdev-row.active{background:#eef2ff;cursor:default}" +
+      ".cmsdev-av{width:34px;height:34px;border-radius:50%;background:#4338ca;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}" +
+      ".cmsdev-meta{min-width:0;flex:1}" +
+      ".cmsdev-name{font-size:13px;font-weight:650;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".cmsdev-mail{font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".cmsdev-roles{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}" +
+      ".cmsdev-tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:#e0e7ff;color:#3730a3}" +
+      ".cmsdev-tag.none{background:#f1f5f9;color:#94a3b8}" +
+      ".cmsdev-cur{font-size:10px;font-weight:700;color:#059669}" +
+      ".cmsdev-ft{display:flex;gap:8px;padding:10px 14px;border-top:1px solid #f1f5f9}" +
+      ".cmsdev-ft a{flex:1;text-align:center;font-size:12px;font-weight:600;text-decoration:none;padding:7px;border-radius:8px;border:1px solid #e5e7eb;color:#334155}" +
+      ".cmsdev-ft a:hover{background:#f8fafc}";
+    document.head.appendChild(s);
+  }
+
+  function devInitials(acc) {
+    var f = (acc.firstName || "").trim();
+    var l = (acc.lastName || "").trim();
+    if (f && l) return (f[0] + l[0]).toUpperCase();
+    return (f || acc.email || "U").slice(0, 2).toUpperCase();
+  }
+
+  function mountDevSwitcher() {
+    if (document.getElementById("cmsdev")) return;
+    devSwitcherStyles();
+    var a = loadAuth();
+    var accounts = a.accounts || [];
+    var cu = authCurrent();
+    var curEmail = cu ? cu.email.toLowerCase() : "";
+
+    var rows = accounts
+      .map(function (acc) {
+        var roles = acc.roles && acc.roles.length
+          ? acc.roles
+              .map(function (r) {
+                return '<span class="cmsdev-tag">' + esc(ROLE_SHORT[r] || r) + "</span>";
+              })
+              .join("")
+          : '<span class="cmsdev-tag none">No role yet</span>';
+        var isCur = acc.email.toLowerCase() === curEmail;
+        return (
+          '<button class="cmsdev-row' + (isCur ? " active" : "") + '" data-email="' +
+          esc(acc.email) + '"' + (isCur ? " disabled" : "") + ">" +
+          '<span class="cmsdev-av">' + esc(devInitials(acc)) + "</span>" +
+          '<span class="cmsdev-meta">' +
+          '<div class="cmsdev-name">' + esc(acc.firstName + " " + acc.lastName) +
+          (isCur ? ' <span class="cmsdev-cur">• current</span>' : "") + "</div>" +
+          '<div class="cmsdev-mail">' + esc(acc.email) + "</div>" +
+          '<div class="cmsdev-roles">' + roles + "</div>" +
+          "</span></button>"
+        );
+      })
+      .join("");
+
+    var label = cu ? esc(cu.firstName) : "Demo login";
+
+    var wrap = document.createElement("div");
+    wrap.className = "cmsdev";
+    wrap.id = "cmsdev";
+    wrap.innerHTML =
+      '<button class="cmsdev-btn" id="cmsdev-toggle"><span class="cmsdev-dot"></span>' +
+      "⇄ " + label + "</button>" +
+      '<div class="cmsdev-panel">' +
+      '<div class="cmsdev-hd"><span>Demo · switch account</span><small>no password</small></div>' +
+      '<div class="cmsdev-list">' + (rows || '<div style="padding:14px;font-size:12px;color:#64748b">No accounts yet.</div>') + "</div>" +
+      '<div class="cmsdev-ft">' +
+      '<a href="signup.html">＋ New account</a>' +
+      (cu ? '<a href="#" id="cmsdev-logout">Log out</a>' : '<a href="index.html">Login page</a>') +
+      "</div></div>";
+    document.body.appendChild(wrap);
+
+    document.getElementById("cmsdev-toggle").addEventListener("click", function () {
+      wrap.classList.toggle("open");
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll(".cmsdev-row:not(.active)"), function (row) {
+      row.addEventListener("click", function () {
+        var email = row.getAttribute("data-email");
+        if (authSwitchTo(email)) location.href = landingHref();
+      });
+    });
+    var lo = document.getElementById("cmsdev-logout");
+    if (lo)
+      lo.addEventListener("click", function (e) {
+        e.preventDefault();
+        authLogout();
+        location.href = "index.html";
+      });
+  }
+
   // Standalone public pages (e.g. the public CFP web page) have no data-page
   // and therefore intentionally do not get the role-based app shell.
   if (document.body.getAttribute("data-page")) buildShell();
+  mountDevSwitcher();
   window.addEventListener("load", animateStats);
 })();

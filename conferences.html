@@ -26,13 +26,20 @@
     var db = CMS.load();
     var c = document.querySelector(".content");
     var activeId = CMS.getConf();
+    var cu = CMS.auth.current();
+    var myEmail = cu ? (cu.email || "").toLowerCase() : "";
 
-    if (!db.conferences.length) {
+    // Only show conferences this account created.
+    var mine = db.conferences.filter(function (cf) {
+      return (cf.createdBy || "").toLowerCase() === myEmail;
+    });
+
+    if (!mine.length) {
       c.querySelector("#list").innerHTML = '<div class="empty"><div class="ico">▤</div><h3>No conferences yet</h3><p>Create your first conference to get started.</p><a class="btn btn-primary" href="create-conference.html">Create Conference</a></div>';
       return;
     }
 
-    c.querySelector("#list").innerHTML = db.conferences.map(function (cf) {
+    c.querySelector("#list").innerHTML = mine.map(function (cf) {
       var tracks = db.tracks.filter(function (t){ return t.conferenceId === cf.id; }).length;
       var papers = db.papers.filter(function (p){ return p.conferenceId === cf.id; }).length;
       var isActive = cf.id === activeId;

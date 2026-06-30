@@ -253,7 +253,7 @@
             submissionDeadline: d.submissionDeadline || "",
             status: "draft",
             cfpContent: "",
-            createdBy: "Conference Admin",
+            createdBy: (CMS.auth.current() && CMS.auth.current().email) || "",
           });
           CMS.save(db);
           CMS.logActivity("create_conference", d.name.trim(), id);

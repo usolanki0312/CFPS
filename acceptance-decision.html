@@ -76,7 +76,8 @@
         '<div class="table-wrap" style="box-shadow:none;margin-top:12px"><table><thead><tr><th>Reviewer</th><th>Score</th><th>Recommendation</th><th>Comments</th></tr></thead><tbody>' +
         revs.map(function(r){
           var rev = db.reviewers.find(function(x){return x.id===r.reviewerId;}) || {};
-          return '<tr><td>'+CMS.esc((rev.firstName||"")+" "+(rev.lastName||""))+'</td><td><span class="score-pill">'+r.score+'/10</span></td><td>'+CMS.esc(r.recommendation)+'</td><td class="muted small">'+CMS.esc(r.comments)+'</td></tr>';
+          var attach = r.attachmentName ? '<div class="muted small" style="margin-top:6px">📎 '+CMS.esc(r.attachmentName)+'</div>' : '';
+          return '<tr><td>'+CMS.esc((rev.firstName||"")+" "+(rev.lastName||""))+'</td><td><span class="score-pill">'+r.score+'/10</span></td><td>'+CMS.esc(r.recommendation)+'</td><td class="muted small">'+CMS.esc(r.comments)+attach+'</td></tr>';
         }).join("") + '</tbody></table></div><div class="small muted" style="margin-top:8px">'+revs.length+' of '+(assigned||revs.length)+' reviews received.</div></div>' : "";
 
       var decidedBanner = decided ?
